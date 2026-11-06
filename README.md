@@ -21,7 +21,7 @@ tested yet. Scheduling and a web UI are planned.
 
 ```bash
 cp .env.example .env          # then fill in your NAS address, share name and SMB login
-docker compose build
+docker compose pull
 docker compose run --rm gogkeeper --browser-login
 docker compose run --rm gogkeeper --check-login-status
 docker compose run --rm gogkeeper --update-cache

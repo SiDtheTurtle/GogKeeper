@@ -1,0 +1,31 @@
+name: gogkeeper
+
+services:
+  gogkeeper:
+    image: ghcr.io/sidtheturtle/gogkeeper:latest
+    container_name: gogkeeper
+    environment:
+      - TZ=Europe/London
+    volumes:
+      - config:/config
+      - cache:/cache
+      # nocopy: stops Docker copying the image's folder permissions onto the new
+      # volume, which would alter the share (and fails outright on a read-only mount).
+      - library:/library:nocopy
+
+volumes:
+  config:
+    name: gogkeeper_config
+  cache:
+    name: gogkeeper_cache
+  # Mounted by Docker from .env credentials, instead of a host fstab entry.
+  # Docker stores these options when the volume is first created,
+  # so after changing .env run: docker volume rm gogkeeper_library
+  # (that only removes the mount settings, not anything on the NAS).
+  library:
+    name: gogkeeper_library
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//${NAS_ADDR:?set NAS_ADDR in .env}/${SMB_SHARE:?set SMB_SHARE in .env}"
+      o: "addr=${NAS_ADDR:?set NAS_ADDR in .env},username=${SMB_USER:?set SMB_USER in .env},password=${SMB_PASSWORD:?set SMB_PASSWORD in .env},uid=1000,gid=1000,file_mode=0644,dir_mode=0755"

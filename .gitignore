@@ -1,0 +1,15 @@
+# Secrets
+.env
+*.env
+
+# One-off migration work: lists the game library, and gets trashed eventually
+phase0/
+
+# Internal notes: hostnames, addresses and share layout
+HANDOFF.md
+
+# Local tool settings
+.claude/
+
+# Local development only: Compose loads this automatically for anyone who has it
+compose.override.yml

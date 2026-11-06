@@ -37,7 +37,7 @@ docker compose run --rm gogkeeper --update-cache
 
 ```bash
 # Download one game: Windows, English, no patches
-docker compose run --rm gogkeeper --download --use-cache \
+docker compose run --rm gogkeeper --download --use-cache --automatic-xml-creation \
   --directory /library/library --platform w --language en \
   --exclude bp,dp --game '^some_game$'
 
@@ -46,8 +46,9 @@ docker compose run --rm gogkeeper --status --no-fast-status-check --use-cache \
   --directory /library/library --platform w --language en
 ```
 
-Status codes: `OK`, `ND` (not found at the expected path), `MD5` (contents differ), `FS` (size differs). Extras
-have no checksums, so `OK` on an extra doesn't confirm its contents.
+Status codes: `OK`, `ND` (not found at the expected path), `MD5` (contents differ), `FS` (size differs). GOG has
+no checksums for extras, so `OK` on an extra doesn't confirm it matches GOG. `--automatic-xml-creation` saves a
+checksum for each extra when it downloads, so later checks can catch corruption.
 
 All other options come from lgogdownloader: run `docker compose run --rm gogkeeper --help` to list them.
 

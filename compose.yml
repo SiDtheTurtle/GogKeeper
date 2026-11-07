@@ -6,6 +6,9 @@ services:
     container_name: gogkeeper
     environment:
       - TZ=Europe/London
+      # What to download, in the engine's format. No defaults: set both in .env.
+      - GOGKEEPER_PLATFORM=${GOGKEEPER_PLATFORM:?set GOGKEEPER_PLATFORM in .env}
+      - GOGKEEPER_LANGUAGE=${GOGKEEPER_LANGUAGE:?set GOGKEEPER_LANGUAGE in .env}
     volumes:
       - config:/config
       - cache:/cache

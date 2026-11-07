@@ -50,4 +50,18 @@ fi
 # Creates GogKeeper's database on first start, and leaves it alone after that.
 python3 -m gogkeeper.db /data/gogkeeper.db || exit 1
 
+# GogKeeper's own commands. Anything else goes to the engine, as before.
+case ${1:-} in
+    sync)
+        # Sync, then check what it downloaded. The check runs even if the sync failed
+        # part-way, as the files that did finish still need checking.
+        shift
+        python3 -m gogkeeper.sync "$@"; sync_status=$?
+        python3 -m gogkeeper.checksums; check_status=$?
+        (( sync_status == 0 && check_status == 0 )) || exit 1
+        exit 0 ;;
+    maintenance)
+        exec python3 -m gogkeeper.checksums --maintenance ;;
+esac
+
 exec lgogdownloader "$@"

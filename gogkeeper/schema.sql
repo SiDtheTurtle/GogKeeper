@@ -31,8 +31,10 @@ CREATE TABLE files (
     platforms        INTEGER NOT NULL,              -- engine's bits: 1 Windows, 2 Mac, 4 Linux
     languages        INTEGER NOT NULL,              -- engine's bits: 1 English, ...
                                                     -- the engine labels every extra Windows and English
-    gog_md5         TEXT NOT NULL                  -- 'none' when GOG has no checksum, e.g. extras
-                     CHECK (gog_md5 = 'none' OR length(gog_md5) = 32),
+    version          TEXT NOT NULL,                 -- GOG's version text, e.g. 5.01; '' when GOG gives none
+    gog_md5          TEXT NOT NULL                  -- 'none': GOG has no checksum, e.g. extras
+                                                    -- 'unknown': not fetched from GOG yet
+                     CHECK (gog_md5 IN ('none', 'unknown') OR length(gog_md5) = 32),
     status           TEXT NOT NULL
                      CHECK (status IN ('not_downloaded', 'downloaded', 'expired')),
     downloaded_at    INTEGER NOT NULL,              -- Unix time, 0 = never
@@ -44,3 +46,15 @@ CREATE TABLE files (
 -- Only one live row per file. Expired rows are kept as history.
 CREATE UNIQUE INDEX files_one_live
     ON files (product_id, path) WHERE status != 'expired';
+
+-- GOG's changelog for a game: one block of HTML holding its whole history, newest first.
+-- A row is added only when the text differs from the game's latest row, and none is
+-- ever changed or removed, so nothing is lost if GOG edits or trims old entries.
+-- To see why a file appeared, read the copy that was current when it was downloaded.
+CREATE TABLE changelogs (
+    id               INTEGER PRIMARY KEY,
+    product_id       INTEGER NOT NULL REFERENCES games(product_id)
+                     CHECK (product_id != -1),
+    fetched_at       INTEGER NOT NULL,              -- Unix time this text was first seen
+    changelog        TEXT NOT NULL                  -- GOG's HTML, as is
+);

@@ -5,6 +5,8 @@ Serials, CD keys and everything else in the file are never read.
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 # Which list a file is in gives its type, and the engine's default subfolder for it
@@ -19,6 +21,18 @@ FILE_LISTS = {
 
 def cache_file():
     return Path(os.environ["XDG_CACHE_HOME"]) / "lgogdownloader" / "gamedetails.json"
+
+
+def update_cache():
+    """Have the engine fetch the whole library from GOG into gamedetails.json."""
+    print("gogkeeper: fetching the game list from GOG, which takes a few minutes", file=sys.stderr, flush=True)
+    # No keyboard input, so a missing login fails at once instead of waiting.
+    result = subprocess.run(["lgogdownloader", "--update-cache"], stdin=subprocess.DEVNULL)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"fetching the game list failed (exit {result.returncode}). "
+            "If you're not logged in: docker compose run --rm gogkeeper --browser-login"
+        )
 
 
 def load():

@@ -5,7 +5,6 @@ the always-on container will, once the login works. For development:
     python3 -m gogkeeper.first_run
 """
 
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -22,18 +21,6 @@ def has_data(db):
     files = db.execute("SELECT count(*) FROM files").fetchone()[0]
     changelogs = db.execute("SELECT count(*) FROM changelogs").fetchone()[0]
     return games + files + changelogs > 0
-
-
-def update_cache():
-    """Have the engine fetch the whole library from GOG into gamedetails.json."""
-    print("gogkeeper: fetching the game list from GOG, which takes a few minutes", file=sys.stderr, flush=True)
-    # No keyboard input, so a missing login fails at once instead of waiting.
-    result = subprocess.run(["lgogdownloader", "--update-cache"], stdin=subprocess.DEVNULL)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"fetching the game list failed (exit {result.returncode}). "
-            "If you're not logged in: docker compose run --rm gogkeeper --browser-login"
-        )
 
 
 def import_catalogue(db, cat, library, now):
@@ -65,7 +52,7 @@ def main():
             return
         if not LIBRARY.is_dir():
             raise RuntimeError(f"library folder not found: {LIBRARY}. Is the share mounted?")
-        update_cache()
+        catalogue.update_cache()
         c = import_catalogue(db, catalogue.load(), LIBRARY, int(time.time()))
         print(
             f"gogkeeper: first run done: {c['games']} games, {c['dlc']} DLC, {c['files']} files "

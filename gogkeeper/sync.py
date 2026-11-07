@@ -3,7 +3,7 @@
     python3 -m gogkeeper.sync [--game REGEX]
 
 Needs GOGKEEPER_PLATFORM and GOGKEEPER_LANGUAGE, in the engine's format, e.g. w and en, or w+l.
---game limits the download to matching games, for testing. Copying GOG's checksums comes next.
+--game limits the download to matching games, for testing.
 """
 
 import argparse
@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 from gogkeeper import catalogue, first_run
 from gogkeeper.db import add_changelog_if_new, add_file, add_game, open_db
@@ -143,6 +144,36 @@ def download(db, args):
         raise RuntimeError(f"the download ended with an error (exit {code})")
 
 
+def gog_md5_from_xml(path):
+    """GOG's checksum from a saved XML file, or None if the file isn't GOG's or isn't usable.
+
+    The engine saves GOG's XML, which has an "available" attribute, and also makes its own
+    from a file's contents, which doesn't. Only GOG's says what the file should be.
+    """
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError) as e:
+        print(f"gogkeeper: warning: can't read {path}: {e}", file=sys.stderr, flush=True)
+        return None
+    md5 = root.get("md5", "").lower()
+    if root.tag != "file" or "available" not in root.attrib or not re.fullmatch(r"[0-9a-f]{32}", md5):
+        return None
+    return md5
+
+
+def fill_checksums(db, xml_root):
+    """Copy GOG's checksum into every live file still marked 'unknown' that now has one. Returns the count."""
+    filled = 0
+    rows = db.execute("""SELECT f.id, f.path, g.gamename FROM files f JOIN games g USING (product_id)
+                         WHERE f.gog_md5 = 'unknown' AND f.status != 'expired'""").fetchall()
+    for fid, path, gamename in rows:
+        xml_file = xml_root / gamename / (path.rsplit("/", 1)[-1] + ".xml")
+        if xml_file.is_file() and (md5 := gog_md5_from_xml(xml_file)):
+            db.execute("UPDATE files SET gog_md5 = ? WHERE id = ?", (md5, fid))
+            filled += 1
+    return filled
+
+
 def main():
     parser = argparse.ArgumentParser(prog="python3 -m gogkeeper.sync")
     parser.add_argument("--game", help="only download games matching this regex, for testing")
@@ -163,7 +194,12 @@ def main():
             c = first_run.import_catalogue(db, cat, first_run.LIBRARY, now)
             print(f"gogkeeper: empty database, so did the first run: {c['files']} files, "
                   f"{c['on_share']} already on the share", file=sys.stderr, flush=True)
-        download(db, download_args(platform, language, game))
+        try:
+            download(db, download_args(platform, language, game))
+        finally:
+            # Also after a failed download: the files that did finish have their XML saved.
+            filled = fill_checksums(db, catalogue.xml_dir())
+            print(f"gogkeeper: copied GOG's checksum for {filled} files", file=sys.stderr, flush=True)
     finally:
         db.close()
 

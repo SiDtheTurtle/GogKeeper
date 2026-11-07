@@ -23,6 +23,11 @@ def cache_file():
     return Path(os.environ["XDG_CACHE_HOME"]) / "lgogdownloader" / "gamedetails.json"
 
 
+def xml_dir():
+    """Where the engine saves each file's checksum XML: xml/<game or DLC name>/<file name>.xml"""
+    return Path(os.environ["XDG_CACHE_HOME"]) / "lgogdownloader" / "xml"
+
+
 def update_cache():
     """Have the engine fetch the whole library from GOG into gamedetails.json."""
     print("gogkeeper: fetching the game list from GOG, which takes a few minutes", file=sys.stderr, flush=True)

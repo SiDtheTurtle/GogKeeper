@@ -103,6 +103,19 @@ Running with `--entrypoint` skips these checks. `sync` builds its own lgogdownlo
 
 Treat the secret volumes, and any backups of them, with care.
 
+## Backup
+
+| What | Back up? | If it's lost |
+|---|---|---|
+| `gogkeeper_data` | **Yes** | The next `sync` rebuilds the list of games and files from the share, but all history is gone: download dates, check dates and results, expired files, and old changelogs |
+| `.env` | **Yes**. **Secret** | You re-enter your NAS address, SMB login, platform and language |
+| `gogkeeper_cache` | Ideally. **Secret** | The next `sync` rebuilds it, but it re-reads every installer on the share first, which takes an hour or more on a large library |
+| `gogkeeper_config` | No. **Secret** | You log in again with `--browser-login` |
+| The share | Your NAS's own backup | It's the backup itself |
+
+Copy `gogkeeper_data` only while no command is running, because a copy taken while SQLite is writing can be
+corrupt. Every command exits when it's done, so any time between runs is safe.
+
 ## Library layout
 
 ```

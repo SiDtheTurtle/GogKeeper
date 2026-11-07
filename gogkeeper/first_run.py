@@ -5,30 +5,16 @@ the always-on container will, once the login works. For development:
     python3 -m gogkeeper.first_run
 """
 
-import json
-import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from gogkeeper.db import open_db
+from gogkeeper import catalogue
+from gogkeeper.db import add_changelog_if_new, add_file, add_game, open_db
 
 DB_PATH = "/data/gogkeeper.db"
 LIBRARY = Path("/library/library")  # the engine's --directory: the share's library/ folder
-
-# Which list a file is in gives its type, and the engine's default subfolder for it
-# (see makeFilepath in lgogdownloader's src/gamedetails.cpp). Installers sit in the game's folder.
-FILE_LISTS = {
-    "installers": ("installer", ""),
-    "extras": ("extra", "extras/"),
-    "patches": ("patch", "patches/"),
-    "languagepacks": ("languagepack", "languagepacks/"),
-}
-
-
-def cache_file():
-    return Path(os.environ["XDG_CACHE_HOME"]) / "lgogdownloader" / "gamedetails.json"
 
 
 def has_data(db):
@@ -50,73 +36,25 @@ def update_cache():
         )
 
 
-def safe_name(name, what):
-    """A single folder or file name from GOG, refused if it could point outside the library."""
-    if not isinstance(name, str) or name in ("", ".", "..") or "/" in name or "\\" in name:
-        raise ValueError(f"unusable {what} from GOG: {name!r}")
-    return name
-
-
-def import_catalogue(db, catalogue, library, now):
+def import_catalogue(db, cat, library, now):
     """Add every game, DLC, file and changelog, in one transaction. Returns counts."""
     counts = {"games": 0, "dlc": 0, "files": 0, "on_share": 0, "changelogs": 0}
     db.execute("BEGIN")
     try:
-        for game in catalogue["games"]:
-            _add_game(db, game, None, library, now, counts)
+        for game in catalogue.walk(cat):
+            add_game(db, game)
+            counts["games" if game["base_product_id"] == -1 else "dlc"] += 1
+            counts["changelogs"] += add_changelog_if_new(db, game["product_id"], game["changelog"], now)
+            for f in game["files"]:
+                on_share = (library / game["share_dir"] / f["path"]).is_file()
+                add_file(db, game["product_id"], f, "downloaded" if on_share else "not_downloaded")
+                counts["files"] += 1
+                counts["on_share"] += on_share
         db.execute("COMMIT")
     except BaseException:
         db.execute("ROLLBACK")
         raise
     return counts
-
-
-def _add_game(db, game, base, library, now, counts):
-    """Add one game, or a DLC when base is (base product ID, base game's folder on the share)."""
-    product_id = int(game["product_id"])
-    gamename = safe_name(game["gamename"], "game name")
-    if base is None:
-        folder, base_id, game_dir = gamename, -1, library / gamename
-        counts["games"] += 1
-    else:
-        folder, base_id = f"dlc/{gamename}", base[0]
-        game_dir = base[1] / folder
-        counts["dlc"] += 1
-
-    db.execute(
-        "INSERT INTO games (product_id, gamename, title, folder, base_product_id) VALUES (?, ?, ?, ?, ?)",
-        (product_id, gamename, game["title"], folder, base_id),
-    )
-
-    changelog = game.get("changelog", "")
-    if changelog.strip():
-        db.execute(
-            "INSERT INTO changelogs (product_id, fetched_at, changelog) VALUES (?, ?, ?)",
-            (product_id, now, changelog),
-        )
-        counts["changelogs"] += 1
-
-    for list_name, (file_type, subdir) in FILE_LISTS.items():
-        # The engine leaves a list out entirely when the game has no files of that type.
-        for f in game.get(list_name, []):
-            path = subdir + safe_name(f["path"].rsplit("/", 1)[-1], "file name")
-            on_share = (game_dir / path).is_file()
-            db.execute(
-                "INSERT INTO files (product_id, path, file_type, platforms, languages, version, gog_md5,"
-                " status, downloaded_at, checksum_at, checksum_result)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'not_checked')",
-                (
-                    product_id, path, file_type, int(f["platform"]), int(f["language"]),
-                    f.get("version", ""),  # the engine leaves it out when GOG gives none
-                    "none" if file_type == "extra" else "unknown",
-                    "downloaded" if on_share else "not_downloaded",
-                ),
-            )
-            counts["files"] += 1
-            counts["on_share"] += on_share
-
-    for dlc in game.get("dlcs", []):
-        _add_game(db, dlc, (product_id, game_dir), library, now, counts)
 
 
 def main():
@@ -128,8 +66,7 @@ def main():
         if not LIBRARY.is_dir():
             raise RuntimeError(f"library folder not found: {LIBRARY}. Is the share mounted?")
         update_cache()
-        catalogue = json.loads(cache_file().read_text())
-        c = import_catalogue(db, catalogue, LIBRARY, int(time.time()))
+        c = import_catalogue(db, catalogue.load(), LIBRARY, int(time.time()))
         print(
             f"gogkeeper: first run done: {c['games']} games, {c['dlc']} DLC, {c['files']} files "
             f"({c['on_share']} already on the share), {c['changelogs']} changelogs",

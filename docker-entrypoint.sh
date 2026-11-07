@@ -47,4 +47,7 @@ if [[ $needs_files == yes ]]; then
     esac
 fi
 
+# Creates GogKeeper's database on first start, and leaves it alone after that.
+python3 -m gogkeeper.db /data/gogkeeper.db || exit 1
+
 exec lgogdownloader "$@"

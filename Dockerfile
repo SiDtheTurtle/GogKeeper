@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates libboost-date-time1.83.0 libboost-filesystem1.83.0 \
       libboost-iostreams1.83.0 libboost-program-options1.83.0 libboost-regex1.83.0 \
       libcurl4t64 libjsoncpp26 librhash1 libtidy58 libtinyxml2-11 tzdata zlib1g \
+      python3 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/build/lgogdownloader /usr/local/bin/lgogdownloader
@@ -32,13 +33,18 @@ RUN lgogdownloader --version
 
 # uid 1000 matches the uid= option on the SMB library mount in compose.yml.
 RUN useradd --uid 1000 --create-home gog \
- && mkdir -p /config /cache /library \
- && chown gog:gog /config /cache /library \
+ && mkdir -p /config /cache /library /data \
+ && chown gog:gog /config /cache /library /data \
  && chmod 700 /config
+
+# GogKeeper's own code. Owned by root, so it can't be changed at run time.
+COPY gogkeeper/ /app/gogkeeper/
 
 ENV USER=gog \
     XDG_CONFIG_HOME=/config \
-    XDG_CACHE_HOME=/cache
+    XDG_CACHE_HOME=/cache \
+    PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1
 
 USER gog
 WORKDIR /home/gog

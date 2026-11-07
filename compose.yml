@@ -9,6 +9,8 @@ services:
     volumes:
       - config:/config
       - cache:/cache
+      # GogKeeper's database. Kept on local disk, as SQLite is unreliable over SMB.
+      - data:/data
       # nocopy: stops Docker copying the image's folder permissions onto the new
       # volume, which would alter the share (and fails outright on a read-only mount).
       - library:/library:nocopy
@@ -18,6 +20,8 @@ volumes:
     name: gogkeeper_config
   cache:
     name: gogkeeper_cache
+  data:
+    name: gogkeeper_data
   # Mounted by Docker from .env credentials, instead of a host fstab entry.
   # Docker stores these options when the volume is first created,
   # so after changing .env run: docker volume rm gogkeeper_library

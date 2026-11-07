@@ -44,6 +44,20 @@ def load():
     return json.loads(cache_file().read_text())
 
 
+def share_dir(folder, base_folder):
+    """A game's folder relative to the library. A DLC's folder sits inside its base game's."""
+    return f"{base_folder}/{folder}" if base_folder else folder
+
+
+# Live files with what's needed to find them on the share. b.folder is NULL for a base game.
+LIVE_FILES_SQL = """
+    SELECT f.id, f.path, f.status, f.gog_md5, g.gamename, g.folder, b.folder
+    FROM files f
+    JOIN games g ON g.product_id = f.product_id
+    LEFT JOIN games b ON b.product_id = g.base_product_id AND g.base_product_id != -1
+    WHERE f.status != 'expired'"""
+
+
 def safe_name(name, what):
     """A single folder or file name from GOG, refused if it could point outside the library."""
     if not isinstance(name, str) or name in ("", ".", "..") or "/" in name or "\\" in name:

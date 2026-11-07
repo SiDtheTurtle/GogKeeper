@@ -114,14 +114,11 @@ def record_download(db, by_name, filename, now):
 def download(db, args):
     """Run the engine's download, showing its output and recording each file as it finishes."""
     by_name = {}  # file name -> live files with that name, and where each sits on the share
-    for fid, path, status, folder, base_folder in db.execute("""
-            SELECT f.id, f.path, f.status, g.folder, b.folder FROM files f
-            JOIN games g ON g.product_id = f.product_id
-            LEFT JOIN games b ON b.product_id = g.base_product_id AND g.base_product_id != -1
-            WHERE f.status != 'expired'"""):
-        share_dir = f"{base_folder}/{folder}" if base_folder else folder
-        by_name.setdefault(path.rsplit("/", 1)[-1], []).append(
-            {"id": fid, "status": status, "on_share": first_run.LIBRARY / share_dir / path})
+    for fid, path, status, _md5, _gamename, folder, base_folder in db.execute(catalogue.LIVE_FILES_SQL):
+        by_name.setdefault(path.rsplit("/", 1)[-1], []).append({
+            "id": fid, "status": status,
+            "on_share": first_run.LIBRARY / catalogue.share_dir(folder, base_folder) / path,
+        })
 
     recorded = 0
     proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

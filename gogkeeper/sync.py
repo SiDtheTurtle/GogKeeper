@@ -14,7 +14,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-from gogkeeper import catalogue, first_run
+from gogkeeper import backup, catalogue, first_run
 from gogkeeper.db import add_changelog_if_new, add_file, add_game, open_db
 
 # The engine prints this when a file finishes, e.g.
@@ -141,6 +141,26 @@ def download(db, args):
         raise RuntimeError(f"the download ended with an error (exit {code})")
 
 
+def record_found_files(db, now):
+    """Mark files that are on the share but still not_downloaded. Returns the count.
+
+    If the engine is stopped just after finishing a file, its "Download complete" line can be
+    lost, and later runs skip the file without a word. Run only after a clean download. Each
+    one starts as not checked, so the checksum step tests it instead of trusting it.
+    """
+    found = 0
+    rows = db.execute(catalogue.LIVE_FILES_SQL + " AND f.status = 'not_downloaded'").fetchall()
+    for fid, path, _status, _md5, _gamename, folder, base_folder in rows:
+        if (first_run.LIBRARY / catalogue.share_dir(folder, base_folder) / path).is_file():
+            db.execute(
+                "UPDATE files SET status = 'downloaded', downloaded_at = ?, checksum_at = 0,"
+                " checksum_result = 'not_checked' WHERE id = ?",
+                (now, fid),
+            )
+            found += 1
+    return found
+
+
 def gog_md5_from_xml(path):
     """GOG's checksum from a saved XML file, or None if the file isn't GOG's or isn't usable.
 
@@ -179,6 +199,7 @@ def main():
 
     db = open_db(first_run.DB_PATH)
     try:
+        backup.before_sync(db)
         if not first_run.LIBRARY.is_dir():
             raise RuntimeError(f"library folder not found: {first_run.LIBRARY}. Is the share mounted?")
         catalogue.update_cache()
@@ -193,6 +214,8 @@ def main():
                   f"{c['on_share']} already on the share", file=sys.stderr, flush=True)
         try:
             download(db, download_args(platform, language, game))
+            found = record_found_files(db, int(time.time()))
+            print(f"gogkeeper: found {found} finished files that weren't recorded", file=sys.stderr, flush=True)
         finally:
             # Also after a failed download: the files that did finish have their XML saved.
             filled = fill_checksums(db, catalogue.xml_dir())

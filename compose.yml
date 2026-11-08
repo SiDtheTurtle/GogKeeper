@@ -4,11 +4,17 @@ services:
   gogkeeper:
     image: ghcr.io/sidtheturtle/gogkeeper:latest
     container_name: gogkeeper
+    # Stays up and runs sync and maintenance at their scheduled times.
+    command: schedule
+    restart: unless-stopped
     environment:
       - TZ=Europe/London
       # What to download, in the engine's format. No defaults: set both in .env.
       - GOGKEEPER_PLATFORM=${GOGKEEPER_PLATFORM:?set GOGKEEPER_PLATFORM in .env}
       - GOGKEEPER_LANGUAGE=${GOGKEEPER_LANGUAGE:?set GOGKEEPER_LANGUAGE in .env}
+      # When to run, in cron's format. No defaults: set both in .env.
+      - GOGKEEPER_SYNC_SCHEDULE=${GOGKEEPER_SYNC_SCHEDULE:?set GOGKEEPER_SYNC_SCHEDULE in .env}
+      - GOGKEEPER_MAINTENANCE_SCHEDULE=${GOGKEEPER_MAINTENANCE_SCHEDULE:?set GOGKEEPER_MAINTENANCE_SCHEDULE in .env}
     volumes:
       - config:/config
       - cache:/cache

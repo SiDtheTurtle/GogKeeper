@@ -8,7 +8,43 @@ import sys
 from pathlib import Path
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# The statements that take a database from each version to the next. schema.sql is always
+# the latest whole schema, used only for a new database.
+UPGRADES = {
+    1: [
+        """CREATE TABLE sync_runs (
+            id                  INTEGER PRIMARY KEY,
+            started_at          INTEGER NOT NULL,
+            finished_at         INTEGER NOT NULL,
+            result              TEXT NOT NULL
+                                CHECK (result IN ('running', 'succeeded', 'failed', 'interrupted')),
+            downloaded          INTEGER NOT NULL,
+            new_games           INTEGER NOT NULL,
+            new_files           INTEGER NOT NULL,
+            removed_files       INTEGER NOT NULL,
+            changed_changelogs  INTEGER NOT NULL
+        )""",
+    ],
+}
+
+
+def upgrade(db):
+    """Bring an older database up to SCHEMA_VERSION, all or nothing.
+
+    Takes the write lock before re-reading the version, so if two jobs start together
+    the second finds the work already done.
+    """
+    db.execute("BEGIN IMMEDIATE")
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    for step in range(version, SCHEMA_VERSION):
+        for statement in UPGRADES[step]:
+            db.execute(statement)
+    db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    db.execute("COMMIT")
+    if version < SCHEMA_VERSION:
+        print(f"gogkeeper: database upgraded from version {version} to {SCHEMA_VERSION}", file=sys.stderr, flush=True)
 
 
 def open_db(path):
@@ -37,6 +73,14 @@ def open_db(path):
                 + SCHEMA_FILE.read_text()
                 + f"\nPRAGMA user_version = {SCHEMA_VERSION};\nCOMMIT;"
             )
+        except BaseException:
+            db.close()  # rolls back and releases the lock
+            raise
+        return db
+
+    if 1 <= version < SCHEMA_VERSION:
+        try:
+            upgrade(db)
         except BaseException:
             db.close()  # rolls back and releases the lock
             raise

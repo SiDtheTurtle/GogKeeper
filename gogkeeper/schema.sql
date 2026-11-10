@@ -58,3 +58,19 @@ CREATE TABLE changelogs (
     fetched_at       INTEGER NOT NULL,              -- Unix time this text was first seen
     changelog        TEXT NOT NULL                  -- GOG's HTML, as is
 );
+
+-- One row per sync, added when it starts and updated when it ends. Test runs limited
+-- to one game aren't recorded. Keep this in step with UPGRADES in db.py.
+-- 'interrupted': still 'running' when the next sync began, so it was killed part-way.
+CREATE TABLE sync_runs (
+    id                  INTEGER PRIMARY KEY,
+    started_at          INTEGER NOT NULL,           -- Unix time
+    finished_at         INTEGER NOT NULL,           -- Unix time, 0 = hasn't finished
+    result              TEXT NOT NULL
+                        CHECK (result IN ('running', 'succeeded', 'failed', 'interrupted')),
+    downloaded          INTEGER NOT NULL,           -- files downloaded
+    new_games           INTEGER NOT NULL,           -- games or DLC GOG newly lists
+    new_files           INTEGER NOT NULL,           -- files GOG newly lists
+    removed_files       INTEGER NOT NULL,           -- files GOG stopped listing
+    changed_changelogs  INTEGER NOT NULL
+);

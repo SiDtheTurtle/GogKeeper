@@ -191,6 +191,57 @@ def fill_checksums(db, xml_root):
     return filled
 
 
+def start_run(db, now):
+    """Add this sync's history row. Returns its id.
+
+    Only one sync runs at a time, so a row still 'running' is from one that was killed.
+    """
+    db.execute("UPDATE sync_runs SET result = 'interrupted' WHERE result = 'running'")
+    return db.execute(
+        "INSERT INTO sync_runs (started_at, finished_at, result, downloaded, new_games, new_files,"
+        " removed_files, changed_changelogs) VALUES (?, 0, 'running', 0, 0, 0, 0, 0)",
+        (now,),
+    ).lastrowid
+
+
+def finish_run(db, run_id, started, result, changes):
+    """Fill in this sync's history row. Files downloaded are counted from their download times."""
+    db.execute(
+        "UPDATE sync_runs SET finished_at = ?, result = ?,"
+        " downloaded = (SELECT count(*) FROM files WHERE downloaded_at >= ?),"
+        " new_games = ?, new_files = ?, removed_files = ?, changed_changelogs = ? WHERE id = ?",
+        (int(time.time()), result, started, changes["new_games"], changes["new_files"],
+         changes["expired"], changes["changelogs"], run_id),
+    )
+
+
+def run_sync(db, game, platform, language, changes):
+    """The sync's steps. Fills in changes as soon as they're known, so a later failure keeps them."""
+    backup.before_sync(db)
+    if not first_run.LIBRARY.is_dir():
+        raise RuntimeError(f"library folder not found: {first_run.LIBRARY}. Is the share mounted?")
+    catalogue.update_cache()
+    cat, now = catalogue.load(), int(time.time())
+    if first_run.has_data(db):
+        c = refresh(db, cat, now)
+        changes.update(c)
+        print(f"gogkeeper: refreshed: {c['new_games']} new games or DLC, {c['new_files']} new files, "
+              f"{c['expired']} expired, {c['changelogs']} changed changelogs", file=sys.stderr, flush=True)
+    else:
+        c = first_run.import_catalogue(db, cat, first_run.LIBRARY, now)
+        changes.update(new_games=c["games"] + c["dlc"], new_files=c["files"], changelogs=c["changelogs"])
+        print(f"gogkeeper: empty database, so did the first run: {c['files']} files, "
+              f"{c['on_share']} already on the share", file=sys.stderr, flush=True)
+    try:
+        download(db, download_args(platform, language, game))
+        found = record_found_files(db, int(time.time()))
+        print(f"gogkeeper: found {found} finished files that weren't recorded", file=sys.stderr, flush=True)
+    finally:
+        # Also after a failed download: the files that did finish have their XML saved.
+        filled = fill_checksums(db, catalogue.xml_dir())
+        print(f"gogkeeper: copied GOG's checksum for {filled} files", file=sys.stderr, flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="python3 -m gogkeeper.sync")
     parser.add_argument("--game", help="only download games matching this regex, for testing")
@@ -199,27 +250,18 @@ def main():
 
     db = open_db(first_run.DB_PATH)
     try:
-        backup.before_sync(db)
-        if not first_run.LIBRARY.is_dir():
-            raise RuntimeError(f"library folder not found: {first_run.LIBRARY}. Is the share mounted?")
-        catalogue.update_cache()
-        cat, now = catalogue.load(), int(time.time())
-        if first_run.has_data(db):
-            c = refresh(db, cat, now)
-            print(f"gogkeeper: refreshed: {c['new_games']} new games or DLC, {c['new_files']} new files, "
-                  f"{c['expired']} expired, {c['changelogs']} changed changelogs", file=sys.stderr, flush=True)
-        else:
-            c = first_run.import_catalogue(db, cat, first_run.LIBRARY, now)
-            print(f"gogkeeper: empty database, so did the first run: {c['files']} files, "
-                  f"{c['on_share']} already on the share", file=sys.stderr, flush=True)
+        if game:  # a test run: leaves no history
+            run_sync(db, game, platform, language, {})
+            return
+        started = int(time.time())
+        run_id = start_run(db, started)
+        changes = {"new_games": 0, "new_files": 0, "expired": 0, "changelogs": 0}
         try:
-            download(db, download_args(platform, language, game))
-            found = record_found_files(db, int(time.time()))
-            print(f"gogkeeper: found {found} finished files that weren't recorded", file=sys.stderr, flush=True)
-        finally:
-            # Also after a failed download: the files that did finish have their XML saved.
-            filled = fill_checksums(db, catalogue.xml_dir())
-            print(f"gogkeeper: copied GOG's checksum for {filled} files", file=sys.stderr, flush=True)
+            run_sync(db, game, platform, language, changes)
+        except Exception:
+            finish_run(db, run_id, started, "failed", changes)
+            raise
+        finish_run(db, run_id, started, "succeeded", changes)
     finally:
         db.close()
 

@@ -50,5 +50,6 @@ USER gog
 WORKDIR /home/gog
 # Refuses file commands that are missing the core parameters: see the script.
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+EXPOSE 7157
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["--help"]

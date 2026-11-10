@@ -11,8 +11,8 @@ on the share for you to review.
 Early: a container stays up and runs the sync and maintenance on a schedule you set. It wraps
 [lgogdownloader](https://github.com/Sude-/lgogdownloader) in a Docker image, with safety checks and a small
 database that records every game and file, when each was downloaded, when it last passed a checksum, and the
-result of every sync. A simple web page is included, but Compose doesn't start it yet: see
-[The web page](#the-web-page). Moving old versions to quarantine and alerts are planned.
+result of every sync. The same container serves a simple web page: see [The web page](#the-web-page).
+Moving old versions to quarantine and alerts are planned.
 
 ## Requirements
 
@@ -27,7 +27,7 @@ cp .env.example .env          # then fill in your NAS, SMB login, platform, lang
 docker compose pull
 docker compose run --rm gogkeeper --browser-login
 docker compose run --rm gogkeeper --check-login-status
-docker compose up -d          # starts the scheduler
+docker compose up -d          # starts the scheduler and the web page
 ```
 
 - `GOGKEEPER_PLATFORM` and `GOGKEEPER_LANGUAGE` have no defaults, so Compose refuses to run until both are
@@ -130,19 +130,12 @@ A read-only page lists your games, with each one's status, last download and lat
 game to see its files, grouped by type, and its release notes. The page also has a button for logging in to
 GOG, so you don't need `--browser-login`: you log in on GOG's own site, then paste back the address you land on.
 
-Compose doesn't start the page yet, so run it by hand once the scheduled container has started at least once,
-which brings the database up to date. Use the same platform and language as your `.env`:
+The scheduled container serves the page on port 7157, so open `http://<your server>:7157`. To use another
+port, change the first number in `ports:` in `compose.yml`, such as `"8080:7157"`.
 
-```bash
-docker run --rm -p 127.0.0.1:8000:8000 \
-  -e GOGKEEPER_PLATFORM=w -e GOGKEEPER_LANGUAGE=en \
-  -v gogkeeper_data:/data:ro -v gogkeeper_config:/config \
-  --entrypoint python3 ghcr.io/sidtheturtle/gogkeeper:latest \
-  -m uvicorn gogkeeper.web:app --host 0.0.0.0 --port 8000
-```
-
-Then open <http://127.0.0.1:8000>. **The page has no password.** Anyone who can reach it can see your library
-and replace your GOG login, so never expose it to the internet.
+**The page has no password.** Anyone who can reach it can see your library and replace your GOG login, so
+keep it on your LAN and never expose it to the internet. To reach it only from the server itself, change the
+port line to `"127.0.0.1:7157:7157"`.
 
 The page knows lgogdownloader's main codes only, such as `w`, `en`, `jp` and `cz`. It stops with an error on an
 alternative spelling such as `ja`.

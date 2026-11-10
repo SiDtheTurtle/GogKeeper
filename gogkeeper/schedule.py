@@ -14,6 +14,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -25,6 +26,7 @@ from apscheduler.triggers.cron import CronTrigger
 from gogkeeper.sync import setting
 
 ENTRYPOINT = "/usr/local/bin/docker-entrypoint.sh"
+WEB_PORT = 7157
 
 
 def log(message):
@@ -111,6 +113,19 @@ def stop(_signal, _frame):
     os._exit(0)
 
 
+def start_web_page():
+    """Serve the web page from this container, in the background.
+
+    If it can't start, such as when the port is taken, it says so and the schedule carries on.
+    """
+    import uvicorn
+
+    server = uvicorn.Server(uvicorn.Config("gogkeeper.web:app", host="0.0.0.0", port=WEB_PORT,
+                                           log_level="warning"))
+    threading.Thread(target=server.run, name="web", daemon=True).start()
+    log(f"web page starting on port {WEB_PORT}")
+
+
 def main():
     triggers = {
         "sync": read_schedule("GOGKEEPER_SYNC_SCHEDULE"),
@@ -122,6 +137,7 @@ def main():
     logging.getLogger("apscheduler").setLevel(logging.ERROR)  # its routine messages are replaced by ours
     log("scheduler started: sync at '{}', maintenance at '{}'".format(
         setting("GOGKEEPER_SYNC_SCHEDULE"), setting("GOGKEEPER_MAINTENANCE_SCHEDULE")))
+    start_web_page()
     build(triggers).start()
 
 

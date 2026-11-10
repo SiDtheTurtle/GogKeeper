@@ -7,6 +7,9 @@ services:
     # Stays up and runs sync and maintenance at their scheduled times.
     command: schedule
     restart: unless-stopped
+    # The web page. It has no password: keep it on your LAN.
+    ports:
+      - "7157:7157"
     environment:
       - TZ=Europe/London
       # What to download, in the engine's format. No defaults: set both in .env.

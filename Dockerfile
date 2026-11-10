@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates libboost-date-time1.83.0 libboost-filesystem1.83.0 \
       libboost-iostreams1.83.0 libboost-program-options1.83.0 libboost-regex1.83.0 \
       libcurl4t64 libjsoncpp26 librhash1 libtidy58 libtinyxml2-11 tzdata zlib1g \
-      python3 python3-apscheduler \
+      python3 python3-apscheduler python3-fastapi python3-uvicorn python3-nh3 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/build/lgogdownloader /usr/local/bin/lgogdownloader

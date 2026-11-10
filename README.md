@@ -8,10 +8,11 @@ on the share for you to review.
 
 ## Status
 
-Early, with no web UI: a container stays up and runs the sync and maintenance on a schedule you set. It
-wraps [lgogdownloader](https://github.com/Sude-/lgogdownloader) in a Docker image, with safety checks and a
-small database that records every game and file, when each was downloaded, and when it last passed a
-checksum. Moving old versions to quarantine, alerts and a web UI are planned.
+Early: a container stays up and runs the sync and maintenance on a schedule you set. It wraps
+[lgogdownloader](https://github.com/Sude-/lgogdownloader) in a Docker image, with safety checks and a small
+database that records every game and file, when each was downloaded, when it last passed a checksum, and the
+result of every sync. A simple web page is included, but Compose doesn't start it yet: see
+[The web page](#the-web-page). Moving old versions to quarantine and alerts are planned.
 
 ## Requirements
 
@@ -33,8 +34,8 @@ docker compose up -d          # starts the scheduler
   set. They use lgogdownloader's format, such as `w` and `en`. Join several with `+`, such as `w+l`.
 - `GOGKEEPER_SYNC_SCHEDULE` and `GOGKEEPER_MAINTENANCE_SCHEDULE` have no defaults either: see
   [The schedule](#the-schedule).
-- `--browser-login` needs a real terminal. It prints a URL, then asks you to paste back the address you land
-  on after logging in. That address contains a login code, so don't share it.
+- `--browser-login` prints a URL, then asks you to paste back the address you land on after logging in. That
+  address contains a login code, so don't share it.
 - A comma in the SMB password breaks the mount, because Docker splits its mount options on commas.
 - After changing `.env` or the mount options, run `docker volume rm gogkeeper_library` to apply them. This
   only removes the mount settings, not anything on your NAS.
@@ -85,6 +86,10 @@ The first `sync` builds the database from what's already on the share. It also c
 because none has been checked yet, so it reads your whole library once. After that, a `sync` only checks
 what it downloads.
 
+Each `sync` is added to the database's history when it starts and updated when it ends, with its result and
+how many files, games and changelogs changed. A `sync` that was killed part-way is marked as interrupted when
+the next one starts. Runs limited to one game with `--game` aren't recorded.
+
 **`maintenance`** reads every file again, so it's best run on a long schedule, such as monthly.
 
 Both exit with an error if a file fails its check or is missing, and they print each one. If one is stopped
@@ -118,6 +123,29 @@ docker compose run --rm gogkeeper --status --no-fast-status-check --use-cache \
 Status codes: `OK`, `ND` (not found at the expected path), `MD5` (contents differ), `FS` (size differs). An
 `OK` doesn't always mean a file was compared: lgogdownloader reports `OK` when it has no checksum to compare
 with, as for extras.
+
+### The web page
+
+A read-only page lists your games, with each one's status, last download and latest change from GOG. Open a
+game to see its files, grouped by type, and its release notes. The page also has a button for logging in to
+GOG, so you don't need `--browser-login`: you log in on GOG's own site, then paste back the address you land on.
+
+Compose doesn't start the page yet, so run it by hand once the scheduled container has started at least once,
+which brings the database up to date. Use the same platform and language as your `.env`:
+
+```bash
+docker run --rm -p 127.0.0.1:8000:8000 \
+  -e GOGKEEPER_PLATFORM=w -e GOGKEEPER_LANGUAGE=en \
+  -v gogkeeper_data:/data:ro -v gogkeeper_config:/config \
+  --entrypoint python3 ghcr.io/sidtheturtle/gogkeeper:latest \
+  -m uvicorn gogkeeper.web:app --host 0.0.0.0 --port 8000
+```
+
+Then open <http://127.0.0.1:8000>. **The page has no password.** Anyone who can reach it can see your library
+and replace your GOG login, so never expose it to the internet.
+
+The page knows lgogdownloader's main codes only, such as `w`, `en`, `jp` and `cz`. It stops with an error on an
+alternative spelling such as `ja`.
 
 ## Safety checks
 
@@ -178,6 +206,10 @@ docker run --rm -v gogkeeper_data:/data --entrypoint sh ghcr.io/sidtheturtle/gog
   -c 'rm -f /data/gogkeeper.db-journal && cp /data/backups/gogkeeper-2026-01-31.db /data/gogkeeper.db'
 docker compose start gogkeeper
 ```
+
+The database upgrades itself in place when the container starts, so a backup from an older version can be
+restored at any time. An older image refuses a database that has been upgraded, so to go back to one, restore
+a backup from before the upgrade.
 
 ## Library layout
 

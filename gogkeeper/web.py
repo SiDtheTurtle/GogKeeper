@@ -467,14 +467,17 @@ def file_state(status, result, checked_at, gog_md5):
     return "No checksum from GOG" if gog_md5 == "none" else "Not checked"
 
 
-def stats_line(games, last_sync):
-    """Games, not counting DLC, then the last successful sync, then games or DLC with a problem."""
+def stats_line(games, last_sync, latest_result):
+    """Games, not counting DLC, then the last successful sync, then any problems: games or DLC
+    with missing or failed files, and the newest finished sync if it failed or was interrupted."""
     count = sum(1 for game in games if game[7] == -1)
     issues = sum(1 for game in games if game[5] or game[6])
+    problems = []
     if issues:
-        problem = f"<span class=bad>{issues} issue{'' if issues == 1 else 's'}</span>"
-    else:
-        problem = "<span class=good>No issues</span>"
+        problems.append(f"<span class=bad>{issues} issue{'' if issues == 1 else 's'}</span>")
+    if latest_result in ("failed", "interrupted"):
+        problems.append(f"<span class=bad>Last sync {latest_result}</span>")
+    problem = " - ".join(problems) or "<span class=good>No issues</span>"
     synced = f"Last sync {show_date(last_sync)} - " if last_sync else ""
     return f"<p class=stats>{count} game{'' if count == 1 else 's'} - {synced}{problem}</p>"
 
@@ -541,6 +544,8 @@ def library():
     try:
         games = db.execute(GAMES_SQL).fetchall()
         last_sync = db.execute("SELECT MAX(finished_at) FROM sync_runs WHERE result = 'succeeded'").fetchone()[0]
+        latest = db.execute(
+            "SELECT result FROM sync_runs WHERE result != 'running' ORDER BY id DESC LIMIT 1").fetchone()
         files = defaultdict(list)
         for product_id, *details in db.execute(FILES_SQL):
             files[product_id].append(details)
@@ -554,7 +559,7 @@ def library():
         for product_id, title, last, changelog, wanted, missing, failed, _base, store_url in games
     )
     return page(
-        f"{stats_line(games, last_sync)}"
+        f"{stats_line(games, last_sync, latest and latest[0])}"
         "<div class='row head'><span><button class=sort type=button>Game</button></span>"
         "<span><button class=sort type=button>Status</button></span>"
         "<span><button class=sort type=button>Last downloaded</button></span>"

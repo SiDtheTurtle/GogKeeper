@@ -12,7 +12,7 @@ Early: a container stays up and runs the sync and maintenance on a schedule you 
 [lgogdownloader](https://github.com/Sude-/lgogdownloader) in a Docker image, with safety checks and a small
 database that records every game and file, when each was downloaded, when it last passed a checksum, and the
 result of every sync. The same container serves a simple web page: see [The web page](#the-web-page).
-Moving old versions to quarantine and alerts are planned.
+Alerts are planned.
 
 ## Requirements
 
@@ -119,7 +119,7 @@ to list its options.
 ```bash
 # Compare your files with GOG's checksums, hashing every file
 docker compose run --rm gogkeeper --status --no-fast-status-check --use-cache \
-  --directory /library/library --platform w --language en
+  --directory /library --platform w --language en
 ```
 
 Status codes: `OK`, `ND` (not found at the expected path), `MD5` (contents differ), `FS` (size differs). An
@@ -154,7 +154,7 @@ The image's entrypoint refuses to run:
 - `--delete-orphans`, at any time
 
 Running with `--entrypoint` skips these checks. `sync` builds its own lgogdownloader arguments, always with
-`--directory /library/library`.
+`--directory /library`.
 
 ## Volumes
 
@@ -209,19 +209,17 @@ a backup from before the upgrade.
 ## Library layout
 
 ```
-<share>/
-  library/      lgogdownloader's --directory
-    <game>/         installers
-      extras/
-      patches/
-      languagepacks/
-      dlc/<dlc>/    DLC installers, with extras/ inside
-  quarantine/   old or unwanted files, kept for review
+<share>/       lgogdownloader's --directory
+  <game>/         installers
+    extras/
+    patches/
+    languagepacks/
+    dlc/<dlc>/    DLC installers, with extras/ inside
 ```
 
 Files are matched by exact path, so don't rename them by hand. When GOG replaces a file with one under a new
-name, the old one stays where it is and is marked expired in the database. Moving those to `quarantine/` is
-planned.
+name, the old one stays where it is and is marked expired in the database. The page lists these as previous
+versions, and its Purge button deletes them.
 
 ## Credits and license
 

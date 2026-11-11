@@ -13,7 +13,7 @@ from gogkeeper import catalogue
 from gogkeeper.db import add_changelog_if_new, add_file, add_game, open_db
 
 DB_PATH = "/data/gogkeeper.db"
-LIBRARY = Path("/library/library")  # the engine's --directory: the share's library/ folder
+LIBRARY = Path("/library")  # the engine's --directory: the share itself
 
 
 def has_data(db):

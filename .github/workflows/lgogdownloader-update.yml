@@ -1,0 +1,62 @@
+name: Check for lgogdownloader updates
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays, 06:00 UTC
+  workflow_dispatch:       # "Run workflow" button on the Actions tab
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Open a pull request if there's a newer release
+        run: |
+          current=$(sed -n 's/^ARG LGOG_TAG=//p' Dockerfile)
+          latest=$(gh api repos/Sude-/lgogdownloader/releases/latest --jq .tag_name)
+          echo "Pinned: $current  Latest: $latest"
+
+          newest=$(printf '%s\n' "$current" "$latest" | sort -V | tail -n 1)
+          if [ "$latest" = "$current" ] || [ "$newest" != "$latest" ]; then
+            echo "Up to date."; exit 0
+          fi
+
+          branch="lgogdownloader-$latest"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "A pull request for $latest already exists."; exit 0
+          fi
+
+          commit=$(gh api "repos/Sude-/lgogdownloader/commits/$latest" --jq .sha)
+          sed -i "s/^ARG LGOG_TAG=.*/ARG LGOG_TAG=$latest/; s/^ARG LGOG_COMMIT=.*/ARG LGOG_COMMIT=$commit/" Dockerfile
+
+          if [ "$(echo "${current#v}" | cut -d. -f1)" != "$(echo "${latest#v}" | cut -d. -f1)" ]; then
+            kind="MAJOR update"
+          else
+            kind="update"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -am "Update lgogdownloader to $latest"
+          git push origin "$branch"
+
+          gh pr create \
+            --title "lgogdownloader $kind: $current → $latest" \
+            --assignee "${{ github.repository_owner }}" \
+            --body "lgogdownloader $latest is out: https://github.com/Sude-/lgogdownloader/releases/tag/$latest
+
+          This updates the pinned tag and commit in the Dockerfile.
+
+          To do:
+          - [ ] Build and test GogKeeper with it
+          - [ ] Merge
+          - [ ] Tag a release"

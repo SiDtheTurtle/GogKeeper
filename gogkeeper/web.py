@@ -103,7 +103,9 @@ STYLE = """
         padding: 10px 24px; border-bottom: 3px solid var(--purple);
     }
     .top form { margin: 0; }
-    .brand { color: var(--text); font-size: 20px; font-weight: 600; text-decoration: none; }
+    .brand { color: var(--text); font-size: 22px; font-weight: 600; text-decoration: none;
+             display: inline-flex; align-items: center; gap: 10px; }
+    .brand img { width: 40px; height: 40px; }
     main { max-width: 1280px; margin: 0 auto; padding: 16px 24px; }
     footer { max-width: 1280px; margin: 0 auto; padding: 8px 24px 24px; color: var(--quiet); font-size: 13px; }
 
@@ -212,9 +214,27 @@ sortable();
 
 # The browser's safety net: only this site's own stylesheet and script may run.
 CSP = (
-    "default-src 'none'; style-src 'self'; script-src 'self'; "
+    "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
+
+# The big logo is for dashboards like Homepage; the favicon is a simpler version that reads at 16px.
+LOGO = """<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="18" fill="#A524AB"/>
+  <rect x="12" y="12" width="76" height="76" rx="6" fill="none" stroke="#F2F2F2" stroke-width="5"/>
+  <g fill="#F2F2F2" font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" font-size="27" text-anchor="middle">
+    <text x="50" y="46" textLength="56" lengthAdjust="spacingAndGlyphs">GOG</text>
+    <text x="50" y="76" textLength="56" lengthAdjust="spacingAndGlyphs">KPR</text>
+  </g>
+</svg>
+"""
+
+FAVICON = """<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="5" fill="#A524AB"/>
+  <rect x="2.5" y="2.5" width="27" height="27" rx="2" fill="none" stroke="#F2F2F2" stroke-width="1.6"/>
+  <text x="16" y="22.5" fill="#F2F2F2" font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" font-size="16" text-anchor="middle" textLength="21" lengthAdjust="spacingAndGlyphs">GK</text>
+</svg>
+"""
 
 GOG_LOGIN_ADDRESS = re.compile(rb"https://auth\.gog\.com/auth\?[^\s\"'<>]+")
 LOGIN_WAIT_SECONDS = 20  # for the engine to print GOG's address
@@ -315,9 +335,9 @@ def from_this_site(request):
 def page(body, actions=""):
     return (
         "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width, initial-scale=1'>"
-        "<title>GogKeeper</title>"
+        "<title>GogKeeper</title><link rel=icon href=/favicon.svg type=image/svg+xml>"
         "<link rel=stylesheet href=/style.css><script src=/page.js defer></script>"
-        f"<header class=top><a class=brand href=/>GogKeeper</a>{actions}</header>"
+        f"<header class=top><a class=brand href=/><img src=/logo.svg alt=''>GogKeeper</a>{actions}</header>"
         f"<main>{body}</main>"
         "<footer>Unofficial tool. Not affiliated with GOG.</footer>"
     )
@@ -326,7 +346,9 @@ def page(body, actions=""):
 @app.middleware("http")
 async def add_security_policy(request, call_next):
     response = await call_next(request)
-    response.headers["Content-Security-Policy"] = CSP
+    # Not on the icons: Chromium won't draw an SVG favicon sent with this policy.
+    if request.url.path not in ("/favicon.svg", "/logo.svg"):
+        response.headers["Content-Security-Policy"] = CSP
     return response
 
 
@@ -338,6 +360,16 @@ def style():
 @app.get("/page.js")
 def page_script():
     return Response(PAGE_SCRIPT, media_type="text/javascript")
+
+
+@app.get("/favicon.svg")
+def favicon():
+    return Response(FAVICON, media_type="image/svg+xml")
+
+
+@app.get("/logo.svg")
+def logo():
+    return Response(LOGO, media_type="image/svg+xml")
 
 
 def show_date(timestamp):

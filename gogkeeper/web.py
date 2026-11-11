@@ -53,7 +53,7 @@ GAMES_SQL = f"""
            SUM({WANTED}),
            SUM({WANTED} AND f.status = 'not_downloaded'),
            SUM({WANTED} AND f.checksum_result = 'failed'),
-           g.base_product_id
+           g.base_product_id, g.store_url
     FROM games g
     LEFT JOIN files f ON f.product_id = g.product_id
     LEFT JOIN changelogs c ON c.id = (SELECT MAX(id) FROM changelogs WHERE product_id = g.product_id)
@@ -114,9 +114,11 @@ STYLE = """
     footer { max-width: 1280px; margin: 0 auto; padding: 8px 24px 24px; color: var(--quiet); font-size: 13px; }
 
     .row {
-        display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 3fr);
+        display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 3fr) 16px;
         gap: 1em; padding: 7px 10px;
     }
+    .store { display: inline-flex; vertical-align: middle; color: var(--quiet); }
+    .store:hover { color: var(--purple-text); }
     .head {
         position: sticky; top: 0; z-index: 1; background: var(--surface);
         font-weight: 600; border-radius: 4px 4px 0 0;
@@ -518,6 +520,21 @@ def release_notes(changelog):
     return f"<details><summary>Release notes</summary><div class=notes>{blocks}</div></details>"
 
 
+STORE_ICON = (  # a box with an arrow out of it: opens in a new tab
+    "<svg viewBox='0 0 24 24' width=16 height=16 fill=none stroke=currentColor stroke-width=2"
+    " stroke-linecap=round stroke-linejoin=round aria-hidden=true>"
+    "<path d='M14 4h6v6'/><path d='M20 4l-9 9'/><path d='M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'/></svg>"
+)
+
+
+def store_link(title, store_url):
+    """An icon linking to the game's GOG store page, or nothing ('unknown' and 'none' aren't links)."""
+    if not store_url.startswith("https://www.gog.com/"):
+        return ""
+    return (f"<a class=store href='{html.escape(store_url, quote=True)}' target=_blank rel='noopener noreferrer'"
+            f" title='GOG store page' aria-label='{html.escape(title, quote=True)} on GOG'>{STORE_ICON}</a>")
+
+
 @app.get("/", response_class=HTMLResponse)
 def library():
     db = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
@@ -533,15 +550,15 @@ def library():
         "<details><summary class=row>"
         f"<span>{html.escape(title)}</span><span>{coloured(game_status(wanted, missing, failed))}</span>"
         f"<span data-sort='{last or ''}'>{show_date(last)}</span><span>{html.escape(latest_change(changelog))}</span>"
-        f"</summary>{type_groups(files[product_id])}{release_notes(changelog)}</details>"
-        for product_id, title, last, changelog, wanted, missing, failed, _base in games
+        f"<span>{store_link(title, store_url)}</span></summary>{type_groups(files[product_id])}{release_notes(changelog)}</details>"
+        for product_id, title, last, changelog, wanted, missing, failed, _base, store_url in games
     )
     return page(
         f"{stats_line(games, last_sync)}"
         "<div class='row head'><span><button class=sort type=button>Game</button></span>"
         "<span><button class=sort type=button>Status</button></span>"
         "<span><button class=sort type=button>Last downloaded</button></span>"
-        f"<span>Latest change</span></div>{rows}",
+        f"<span>Latest change</span><span></span></div>{rows}",
         actions=f"<div class=actions>{sync_button()}"
                 "<form method=post action=/login><button>Log in to GOG</button></form></div>",
     )

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # The statements that take a database from each version to the next. schema.sql is always
 # the latest whole schema, used only for a new database.
@@ -26,6 +26,11 @@ UPGRADES = {
             removed_files       INTEGER NOT NULL,
             changed_changelogs  INTEGER NOT NULL
         )""",
+    ],
+    # SQLite can only add a NOT NULL column with a default. Code always sets the value anyway.
+    2: [
+        "ALTER TABLE games ADD COLUMN store_url TEXT NOT NULL DEFAULT 'unknown'",
+        "UPDATE games SET store_url = 'none' WHERE product_id = -1",
     ],
 }
 
@@ -94,9 +99,10 @@ def open_db(path):
 
 
 def add_game(db, game):
-    """Insert a game or DLC from catalogue.walk()."""
+    """Insert a game or DLC from catalogue.walk(). Its store link isn't fetched yet."""
     db.execute(
-        "INSERT INTO games (product_id, gamename, title, folder, base_product_id) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO games (product_id, gamename, title, folder, base_product_id, store_url)"
+        " VALUES (?, ?, ?, ?, ?, 'unknown')",
         (game["product_id"], game["gamename"], game["title"], game["folder"], game["base_product_id"]),
     )
 

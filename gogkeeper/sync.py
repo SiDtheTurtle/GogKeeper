@@ -14,7 +14,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-from gogkeeper import backup, catalogue, first_run
+from gogkeeper import backup, catalogue, first_run, store_links
 from gogkeeper.db import add_changelog_if_new, add_file, add_game, open_db
 
 # The engine prints this when a file finishes, e.g.
@@ -232,6 +232,7 @@ def run_sync(db, game, platform, language, changes):
         changes.update(new_games=c["games"] + c["dlc"], new_files=c["files"], changelogs=c["changelogs"])
         print(f"gogkeeper: empty database, so did the first run: {c['files']} files, "
               f"{c['on_share']} already on the share", file=sys.stderr, flush=True)
+    store_links.update(db, every_game=False)
     try:
         download(db, download_args(platform, language, game))
         found = record_found_files(db, int(time.time()))

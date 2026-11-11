@@ -12,13 +12,16 @@ CREATE TABLE games (
     title            TEXT NOT NULL,                 -- display name
     folder           TEXT NOT NULL,                 -- base game: relative to the library, e.g. the_witcher_3
                                                     -- DLC: relative to its base game, e.g. dlc/hearts_of_stone
-    base_product_id  INTEGER NOT NULL REFERENCES games(product_id)  -- -1 for a base game
+    base_product_id  INTEGER NOT NULL REFERENCES games(product_id), -- -1 for a base game
+    store_url        TEXT NOT NULL                  -- GOG store page, e.g. https://www.gog.com/game/the_witcher_2
+                                                    -- 'unknown': not fetched yet; 'none': GOG has no page
+                                                    -- Databases upgraded from version 2 also have DEFAULT 'unknown'
 );
 
 -- The "no parent" row that base games point to. Not a real game:
 -- leave it out of any query that lists or counts games.
-INSERT INTO games (product_id, gamename, title, folder, base_product_id)
-VALUES (-1, '_none', '(no parent)', '', -1);
+INSERT INTO games (product_id, gamename, title, folder, base_product_id, store_url)
+VALUES (-1, '_none', '(no parent)', '', -1, 'none');
 
 CREATE TABLE files (
     id               INTEGER PRIMARY KEY,

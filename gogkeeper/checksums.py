@@ -14,7 +14,7 @@ import hashlib
 import sys
 import time
 
-from gogkeeper import catalogue, first_run
+from gogkeeper import catalogue, first_run, store_links
 from gogkeeper.db import open_db
 
 CHECKABLE_SQL = catalogue.LIVE_FILES_SQL + """
@@ -64,6 +64,8 @@ def main():
     try:
         if not first_run.LIBRARY.is_dir():
             raise RuntimeError(f"library folder not found: {first_run.LIBRARY}. Is the share mounted?")
+        if run == "maintenance run":
+            store_links.update(db, every_game=True)
         rows = db.execute(MAINTENANCE_SQL if run == "maintenance run" else NEW_FILES_SQL).fetchall()
         print(f"gogkeeper: {run}: {len(rows)} files to check", file=sys.stderr, flush=True)
         c = check(db, rows, first_run.LIBRARY)

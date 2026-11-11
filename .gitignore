@@ -13,3 +13,6 @@ HANDOFF.md
 
 # Local development only: Compose loads this automatically for anyone who has it
 compose.override.yml
+
+# Python cache
+__pycache__/

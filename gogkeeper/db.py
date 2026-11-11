@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # The statements that take a database from each version to the next. schema.sql is always
 # the latest whole schema, used only for a new database.
@@ -31,6 +31,69 @@ UPGRADES = {
     2: [
         "ALTER TABLE games ADD COLUMN store_url TEXT NOT NULL DEFAULT 'unknown'",
         "UPDATE games SET store_url = 'none' WHERE product_id = -1",
+    ],
+    # Allowed values move from CHECK lists into lookup tables, and 'purged' is added. SQLite
+    # can't change a CHECK in place, so files and sync_runs are rebuilt as SQLite documents:
+    # new table, copy every row, drop the old one, rename. No other table points at either.
+    # Every copied row is checked against the new foreign keys, so a bad value stops the upgrade.
+    3: [
+        "CREATE TABLE file_statuses (value TEXT PRIMARY KEY) WITHOUT ROWID",
+        "INSERT INTO file_statuses (value) VALUES ('not_downloaded'), ('downloaded'), ('expired'), ('purged')",
+        "CREATE TABLE file_types (value TEXT PRIMARY KEY) WITHOUT ROWID",
+        "INSERT INTO file_types (value) VALUES ('installer'), ('extra'), ('patch'), ('languagepack')",
+        "CREATE TABLE checksum_results (value TEXT PRIMARY KEY) WITHOUT ROWID",
+        "INSERT INTO checksum_results (value) VALUES ('not_checked'), ('passed'), ('failed')",
+        "CREATE TABLE sync_results (value TEXT PRIMARY KEY) WITHOUT ROWID",
+        "INSERT INTO sync_results (value) VALUES ('running'), ('succeeded'), ('failed'), ('interrupted')",
+
+        """CREATE TABLE files_new (
+            id               INTEGER PRIMARY KEY,
+            product_id       INTEGER NOT NULL REFERENCES games(product_id) CHECK (product_id != -1),
+            path             TEXT NOT NULL,
+            file_type        TEXT NOT NULL REFERENCES file_types(value),
+            platforms        INTEGER NOT NULL,
+            languages        INTEGER NOT NULL,
+            version          TEXT NOT NULL,
+            gog_md5          TEXT NOT NULL
+                             CHECK (gog_md5 IN ('none', 'unknown') OR length(gog_md5) = 32),
+            status           TEXT NOT NULL REFERENCES file_statuses(value),
+            downloaded_at    INTEGER NOT NULL,
+            checksum_at      INTEGER NOT NULL,
+            checksum_result  TEXT NOT NULL REFERENCES checksum_results(value)
+        )""",
+        """INSERT INTO files_new (id, product_id, path, file_type, platforms, languages, version, gog_md5,
+                                  status, downloaded_at, checksum_at, checksum_result)
+           SELECT id, product_id, path, file_type, platforms, languages, version, gog_md5,
+                  status, downloaded_at, checksum_at, checksum_result FROM files""",
+        "DROP TABLE files",  # also drops files_one_live
+        "ALTER TABLE files_new RENAME TO files",
+        "CREATE UNIQUE INDEX files_one_live ON files (product_id, path) WHERE status NOT IN ('expired', 'purged')",
+
+        """CREATE TABLE sync_runs_new (
+            id                  INTEGER PRIMARY KEY,
+            started_at          INTEGER NOT NULL,
+            finished_at         INTEGER NOT NULL,
+            result              TEXT NOT NULL REFERENCES sync_results(value),
+            downloaded          INTEGER NOT NULL,
+            new_games           INTEGER NOT NULL,
+            new_files           INTEGER NOT NULL,
+            removed_files       INTEGER NOT NULL,
+            changed_changelogs  INTEGER NOT NULL
+        )""",
+        """INSERT INTO sync_runs_new (id, started_at, finished_at, result, downloaded, new_games, new_files,
+                                      removed_files, changed_changelogs)
+           SELECT id, started_at, finished_at, result, downloaded, new_games, new_files,
+                  removed_files, changed_changelogs FROM sync_runs""",
+        "DROP TABLE sync_runs",
+        "ALTER TABLE sync_runs_new RENAME TO sync_runs",
+
+        """CREATE TABLE old_files (
+            id               INTEGER PRIMARY KEY,
+            product_id       INTEGER NOT NULL REFERENCES games(product_id),
+            path             TEXT NOT NULL UNIQUE,
+            size             INTEGER NOT NULL,
+            found_at         INTEGER NOT NULL
+        )""",
     ],
 }
 

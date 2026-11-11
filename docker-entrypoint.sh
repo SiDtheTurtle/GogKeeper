@@ -85,6 +85,10 @@ case ${1:-} in
     maintenance)
         wait_for_turn maintenance
         exec python3 -m gogkeeper.checksums --maintenance ;;
+    purge)
+        # Deletes the old copies the page listed. Only the page's Purge button starts it.
+        wait_for_turn purge
+        exec python3 -m gogkeeper.purge ;;
 esac
 
 exec lgogdownloader "$@"

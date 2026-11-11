@@ -17,6 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response
 
+from gogkeeper.catalogue import share_dir
 from gogkeeper.sync import setting
 
 DB_PATH = "/data/gogkeeper.db"
@@ -43,7 +44,7 @@ def setting_bits(name, bits):
 
 # Files the backup is meant to hold: current ones, no patches, on the platform and language settings.
 WANTED = (
-    "f.status != 'expired' AND f.file_type != 'patch'"
+    "f.status NOT IN ('expired', 'purged') AND f.file_type != 'patch'"
     f" AND f.platforms & {setting_bits('GOGKEEPER_PLATFORM', PLATFORM_BITS)}"
     f" AND f.languages & {setting_bits('GOGKEEPER_LANGUAGE', LANGUAGE_BITS)}"
 )
@@ -66,6 +67,14 @@ FILES_SQL = f"""
     FROM files f
     WHERE {WANTED}
     ORDER BY f.path"""
+
+# Old copies on the share, as the last sync found them, with each one's game folder.
+OLD_SQL = """
+    SELECT o.product_id, o.path, o.size, g.folder, b.folder
+    FROM old_files o
+    JOIN games g ON g.product_id = o.product_id
+    LEFT JOIN games b ON b.product_id = g.base_product_id AND g.base_product_id != -1
+    ORDER BY o.path"""
 
 # In the order they're shown. Patches aren't wanted, so they never appear.
 TYPE_LABELS = {"installer": "Installers", "extra": "Extras", "languagepack": "Language packs"}
@@ -105,8 +114,8 @@ STYLE = """
     }
     .top form { margin: 0; }
     .actions { display: flex; gap: 10px; }
-    #sync { min-width: 10.5em; }  /* doesn't change size when it asks "Sure?" */
-    #sync[data-armed] { background: var(--red); color: #212121; font-weight: 600; }
+    .job { min-width: 10.5em; }  /* doesn't change size when it asks "Are you sure?" */
+    .job[data-armed] { background: var(--red); color: #212121; font-weight: 600; }
     .brand { color: var(--text); font-size: 22px; font-weight: 600; text-decoration: none;
              display: inline-flex; align-items: center; gap: 10px; }
     .brand img { width: 40px; height: 40px; }
@@ -138,6 +147,9 @@ STYLE = """
     details details > summary { cursor: pointer; padding: 3px 0; color: var(--purple-text); }
     details details:last-child { margin-bottom: 10px; }
 
+    .old { color: var(--quiet); font-size: 13px; margin-left: 0.6em; }
+    .filter { background: none; color: var(--purple-text); padding: 0; text-decoration: underline; }
+    .filter:hover { filter: none; color: var(--text); }
     .good { color: var(--green); }
     .bad { color: var(--red); font-weight: 600; }
 
@@ -214,55 +226,71 @@ function sortable() {
     if (buttons.length) sortBy(buttons[0], 1);
 }
 
-// Like a safety cover: the first click arms it, and it closes again after 5 seconds.
-// The second click starts a sync. While it runs or waits, the page checks every 15 seconds,
-// and reloads when it's finished.
-function syncButton() {
-    const button = document.getElementById("sync");
+// The Sync and Purge buttons. Like a safety cover: the first click arms it, and it closes
+// again after 5 seconds. The second click starts the job. While it runs or waits, the page
+// checks every 5 seconds, and reloads when it's finished. A refusal is shown on the button.
+function jobButton(job, name) {
+    const button = document.getElementById(job);
     if (!button) return;
+    const idle = button.textContent;
     let timer;
     function disarm() {
         clearTimeout(timer);
         delete button.dataset.armed;
-        button.textContent = "Sync now";
+        button.textContent = idle;
     }
     function busy(text) {
         button.disabled = true;
+        button.dataset.busy = "yes";
         button.textContent = text;
     }
     function show(jobs) {
-        if (jobs.running === "sync") busy("Sync running\\u2026");
-        else if (jobs.waiting.includes("sync")) busy("Sync waiting\\u2026");
-        else if (button.disabled) location.reload();
+        if (jobs.running === job) busy(name + " running\u2026");
+        else if (jobs.waiting.includes(job)) busy(name + " waiting\u2026");
+        else if (button.dataset.busy) location.reload();
     }
     async function check() {
         try { show(await (await fetch("/jobs")).json()); } catch { /* try again next time */ }
-        if (button.disabled) setTimeout(check, 15000);
+        if (button.dataset.busy) setTimeout(check, 5000);
     }
     async function start() {
-        busy("Starting\\u2026");
+        busy("Starting\u2026");
         try {
-            const response = await fetch("/sync", { method: "POST" });
+            const response = await fetch("/" + job, { method: "POST", body: new URLSearchParams(button.dataset) });
             if (response.ok) show(await response.json());
+            else { button.textContent = await response.text(); delete button.dataset.busy; return; }
         } catch { /* the next check shows what happened */ }
-        if (button.disabled) setTimeout(check, 15000);
+        if (button.dataset.busy) setTimeout(check, 5000);
     }
     button.addEventListener("click", () => {
         if (!button.dataset.armed) {
             button.dataset.armed = "yes";
-            button.textContent = "Sure? Click again";
+            button.textContent = "Are you sure?";
             timer = setTimeout(disarm, 5000);
             return;
         }
         disarm();
         start();
     });
-    if (button.disabled) setTimeout(check, 15000);
+    if (button.dataset.busy) setTimeout(check, 5000);
+}
+
+// Shows only the games with old copies, or all of them again.
+function oldFilter() {
+    const button = document.getElementById("only-old");
+    if (!button) return;
+    button.addEventListener("click", () => {
+        const only = button.textContent.startsWith("Show only");
+        document.querySelectorAll("main > details:not([data-old])").forEach(game => { game.hidden = only; });
+        button.textContent = only ? "Show all games" : "Show only these";
+    });
 }
 
 document.querySelectorAll(".notes").forEach(trim);
+oldFilter();
 sortable();
-syncButton();
+jobButton("sync", "Sync");
+jobButton("purge", "Purge");
 """
 
 # The browser's safety net: only this site's own stylesheet and script may run.
@@ -301,6 +329,7 @@ login_address = None
 
 # Set by the scheduler when it serves this page. Run on its own, the page has no Sync button.
 sync_now = None  # brings the scheduled sync forward to now
+purge_now = None  # queues a one-off purge
 job_status = None  # {"running": job name or None, "waiting": [job names]}
 SYNC_START_SECONDS = 5  # for the scheduler to pick up the sync
 
@@ -467,19 +496,32 @@ def file_state(status, result, checked_at, gog_md5):
     return "No checksum from GOG" if gog_md5 == "none" else "Not checked"
 
 
-def stats_line(games, last_sync, latest_result):
-    """Games, not counting DLC, then the last successful sync, then any problems: games or DLC
-    with missing or failed files, and the newest finished sync if it failed or was interrupted."""
+def show_size(size):
+    return f"{size / 1e9:.1f} GB" if size >= 1e8 else f"{size / 1e6:.1f} MB"
+
+
+def stats_line(games, last_sync, latest_result, old):
+    """Games, not counting DLC, then the last successful sync, then the old copies on the share,
+    if any, with the button that filters to them. Then any problems: games or DLC with missing
+    or failed files, and the newest finished sync if it failed or was interrupted."""
     count = sum(1 for game in games if game[7] == -1)
+    parts = [f"{count} game{'' if count == 1 else 's'}"]
+    if last_sync:
+        parts.append(f"Last sync {show_date(last_sync)}")
+    old_files = [f for files in old.values() for f in files]
+    previous = f"{len(old_files)} previous version{'' if len(old_files) == 1 else 's'}"
+    if old_files:
+        previous += (f" ({show_size(sum(size for _path, size in old_files))})"
+                     " <button id=only-old class=filter type=button>Show only these</button>")
+    parts.append(previous)
     issues = sum(1 for game in games if game[5] or game[6])
     problems = []
     if issues:
         problems.append(f"<span class=bad>{issues} issue{'' if issues == 1 else 's'}</span>")
     if latest_result in ("failed", "interrupted"):
         problems.append(f"<span class=bad>Last sync {latest_result}</span>")
-    problem = " - ".join(problems) or "<span class=good>No issues</span>"
-    synced = f"Last sync {show_date(last_sync)} - " if last_sync else ""
-    return f"<p class=stats>{count} game{'' if count == 1 else 's'} - {synced}{problem}</p>"
+    parts += problems or ["<span class=good>No issues</span>"]
+    return f"<p class=stats>{' | '.join(parts)}</p>"
 
 
 def coloured(state):
@@ -507,6 +549,19 @@ def type_groups(files):
         if of_type:
             groups += f"<details><summary>{label} ({len(of_type)})</summary>{files_table(of_type)}</details>"
     return groups
+
+
+def old_group(old_files):
+    """The game's old copies, with their sizes, or nothing."""
+    if not old_files:
+        return ""
+    rows = "".join(f"<tr><td>{html.escape(path)}</td><td>{show_size(size)}</td></tr>" for path, size in old_files)
+    return (f"<details><summary>Previous versions ({len(old_files)})</summary>"
+            f"<table><tr><th>File</th><th>Size</th></tr>{rows}</table></details>")
+
+
+def old_mark(old_files):
+    return f"<span class=old>{len(old_files)} previous</span>" if old_files else ""
 
 
 def clean_notes(changelog):
@@ -549,42 +604,63 @@ def library():
         files = defaultdict(list)
         for product_id, *details in db.execute(FILES_SQL):
             files[product_id].append(details)
+        old = defaultdict(list)  # product_id -> (path within the game's folder, size)
+        for product_id, path, size, folder, base_folder in db.execute(OLD_SQL):
+            prefix = share_dir(folder, base_folder) + "/" if product_id != -1 else ""
+            old[product_id].append((path.removeprefix(prefix), size))
     finally:
         db.close()
     rows = "".join(
-        "<details><summary class=row>"
-        f"<span>{html.escape(title)}</span><span>{coloured(game_status(wanted, missing, failed))}</span>"
+        f"<details{' data-old' if old[product_id] else ''}><summary class=row>"
+        f"<span>{html.escape(title)}{old_mark(old[product_id])}</span><span>{coloured(game_status(wanted, missing, failed))}</span>"
         f"<span data-sort='{last or ''}'>{show_date(last)}</span><span>{html.escape(latest_change(changelog))}</span>"
-        f"<span>{store_link(title, store_url)}</span></summary>{type_groups(files[product_id])}{release_notes(changelog)}</details>"
+        f"<span>{store_link(title, store_url)}</span></summary>{type_groups(files[product_id])}"
+        f"{old_group(old[product_id])}{release_notes(changelog)}</details>"
         for product_id, title, last, changelog, wanted, missing, failed, _base, store_url in games
     )
+    if old[-1]:  # in folders that belong to no game
+        rows += ("<details data-old><summary class=row><span>Not in a game's folder"
+                 f"{old_mark(old[-1])}</span><span></span><span></span><span></span><span></span></summary>"
+                 f"{old_group(old[-1])}</details>")
     return page(
-        f"{stats_line(games, last_sync, latest and latest[0])}"
+        f"{stats_line(games, last_sync, latest and latest[0], old)}"
         "<div class='row head'><span><button class=sort type=button>Game</button></span>"
         "<span><button class=sort type=button>Status</button></span>"
         "<span><button class=sort type=button>Last downloaded</button></span>"
         f"<span>Latest change</span><span></span></div>{rows}",
-        actions=f"<div class=actions>{sync_button()}"
+        actions=f"<div class=actions>{purge_button(sum(len(f) for f in old.values()))}{sync_button()}"
                 "<form method=post action=/login><button>Log in to GOG</button></form></div>",
     )
 
 
-def sync_label(jobs):
-    """What the Sync button says while a sync is running or waiting, else None."""
-    if jobs["running"] == "sync":
-        return "Sync running…"
-    if "sync" in jobs["waiting"]:
-        return "Sync waiting…"
+def job_label(jobs, job):
+    """What a job's button says while the job is running or waiting, else None."""
+    if jobs["running"] == job:
+        return f"{job.title()} running\u2026"
+    if job in jobs["waiting"]:
+        return f"{job.title()} waiting\u2026"
     return None
 
 
 def sync_button():
     if not sync_now:
         return ""
-    label = sync_label(job_status())
+    label = job_label(job_status(), "sync")
     if label:
-        return f"<button id=sync type=button disabled>{label}</button>"
-    return "<button id=sync type=button>Sync now</button>"
+        return f"<button id=sync class=job type=button disabled data-busy>{label}</button>"
+    return "<button id=sync class=job type=button>Sync now</button>"
+
+
+def purge_button(count):
+    """Purge (N), where N is how many files it deletes. The page sends N back, so a purge of a
+    list that has changed since is refused. Greyed out with nothing to delete."""
+    if not purge_now:
+        return ""
+    label = job_label(job_status(), "purge")
+    if label:
+        return f"<button id=purge class=job type=button disabled data-busy>{label}</button>"
+    return (f"<button id=purge class=job type=button data-count={count}{' disabled' if not count else ''}"
+            f" title='Delete every previous version'>Purge ({count})</button>")
 
 
 @app.get("/jobs")
@@ -600,10 +676,36 @@ def sync(request: Request):
     if not sync_now:
         return Response("Sync isn't available: the scheduler isn't running.", status_code=404)
     sync_now()
+    return wait_for_job("sync")
+
+
+def wait_for_job(job):
+    """Wait briefly until the scheduler has the job, so the page can show it."""
     deadline = time.monotonic() + SYNC_START_SECONDS
-    while not sync_label(job_status()) and time.monotonic() < deadline:
+    while not job_label(job_status(), job) and time.monotonic() < deadline:
         time.sleep(0.1)
     return job_status()
+
+
+@app.post("/purge")
+async def purge(request: Request):
+    """Queue a purge of the previous versions, if the page's count still matches the list."""
+    if not from_this_site(request):
+        return Response("Refused: another website", status_code=403)
+    if not purge_now:
+        return Response("Scheduler not running", status_code=404)
+    form = parse_qs((await request.body()).decode("utf-8", "replace"))
+    db = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    try:
+        count = db.execute("SELECT count(*) FROM old_files").fetchone()[0]
+    finally:
+        db.close()
+    if form.get("count", [""])[0] != str(count):
+        return Response("List changed: reload", status_code=409)
+    if count == 0:
+        return Response("Nothing to purge", status_code=409)
+    purge_now()
+    return await run_in_threadpool(wait_for_job, "purge")
 
 
 def login_page(message=""):

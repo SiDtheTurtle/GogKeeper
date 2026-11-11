@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 
 from apscheduler.events import EVENT_JOB_MAX_INSTANCES, EVENT_JOB_SUBMITTED
 from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.jobstores.base import ConflictingIdError
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -134,7 +135,8 @@ def start_web_page(scheduler, jobs):
 
     If it can't start, such as when the port is taken, it says so and the schedule carries on.
     The page's Sync button brings the scheduled sync forward to now, so it joins the same queue:
-    it waits for a running job, and isn't queued twice.
+    it waits for a running job, and isn't queued twice. Its Purge button adds a one-off purge
+    to the same queue.
     """
     import uvicorn
 
@@ -144,7 +146,17 @@ def start_web_page(scheduler, jobs):
         log("sync requested from the web page")
         scheduler.modify_job("sync", next_run_time=datetime.now().astimezone())
 
+    def purge_now():
+        """Queue one purge, which runs once and has no schedule. True if queued, False if one already is."""
+        try:
+            scheduler.add_job(jobs.run, args=["purge"], id="purge")
+        except ConflictingIdError:
+            return False
+        log("purge requested from the web page")
+        return True
+
     web.sync_now = sync_now
+    web.purge_now = purge_now
     web.job_status = jobs.status
     server = uvicorn.Server(uvicorn.Config("gogkeeper.web:app", host="0.0.0.0", port=WEB_PORT,
                                            log_level="warning"))

@@ -6,6 +6,17 @@
 -- SQLite only enforces foreign keys when each connection runs:
 --     PRAGMA foreign_keys = ON;
 
+-- Allowed values. A column that points at one of these can only hold a value listed there,
+-- so adding a value is one INSERT, with no table rebuild. Keep these in step with UPGRADES in db.py.
+CREATE TABLE file_statuses (value TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO file_statuses (value) VALUES ('not_downloaded'), ('downloaded'), ('expired'), ('purged');
+CREATE TABLE file_types (value TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO file_types (value) VALUES ('installer'), ('extra'), ('patch'), ('languagepack');
+CREATE TABLE checksum_results (value TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO checksum_results (value) VALUES ('not_checked'), ('passed'), ('failed');
+CREATE TABLE sync_results (value TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO sync_results (value) VALUES ('running'), ('succeeded'), ('failed'), ('interrupted');
+
 CREATE TABLE games (
     product_id       INTEGER PRIMARY KEY,           -- GOG's ID
     gamename         TEXT NOT NULL UNIQUE,          -- engine's name, e.g. the_witcher_3_wild_hunt
@@ -29,8 +40,7 @@ CREATE TABLE files (
                      CHECK (product_id != -1),
     path             TEXT NOT NULL,                 -- relative to the game's folder, e.g. extras/manual.zip
     -- Every file GOG lists is stored. Queries filter on these three to match the settings.
-    file_type        TEXT NOT NULL
-                     CHECK (file_type IN ('installer', 'extra', 'patch', 'languagepack')),
+    file_type        TEXT NOT NULL REFERENCES file_types(value),
     platforms        INTEGER NOT NULL,              -- engine's bits: 1 Windows, 2 Mac, 4 Linux
     languages        INTEGER NOT NULL,              -- engine's bits: 1 English, ...
                                                     -- the engine labels every extra Windows and English
@@ -38,17 +48,17 @@ CREATE TABLE files (
     gog_md5          TEXT NOT NULL                  -- 'none': GOG has no checksum, e.g. extras
                                                     -- 'unknown': not fetched from GOG yet
                      CHECK (gog_md5 IN ('none', 'unknown') OR length(gog_md5) = 32),
-    status           TEXT NOT NULL
-                     CHECK (status IN ('not_downloaded', 'downloaded', 'expired')),
+    status           TEXT NOT NULL REFERENCES file_statuses(value),
+                                                    -- 'expired': GOG stopped listing it
+                                                    -- 'purged': expired, then deleted from the share
     downloaded_at    INTEGER NOT NULL,              -- Unix time, 0 = never
     checksum_at      INTEGER NOT NULL,              -- Unix time of the last real check, 0 = never
-    checksum_result  TEXT NOT NULL
-                     CHECK (checksum_result IN ('not_checked', 'passed', 'failed'))
+    checksum_result  TEXT NOT NULL REFERENCES checksum_results(value)
 );
 
--- Only one live row per file. Expired rows are kept as history.
+-- Only one live row per file. Expired and purged rows are kept as history.
 CREATE UNIQUE INDEX files_one_live
-    ON files (product_id, path) WHERE status != 'expired';
+    ON files (product_id, path) WHERE status NOT IN ('expired', 'purged');
 
 -- GOG's changelog for a game: one block of HTML holding its whole history, newest first.
 -- A row is added only when the text differs from the game's latest row, and none is
@@ -69,11 +79,21 @@ CREATE TABLE sync_runs (
     id                  INTEGER PRIMARY KEY,
     started_at          INTEGER NOT NULL,           -- Unix time
     finished_at         INTEGER NOT NULL,           -- Unix time, 0 = hasn't finished
-    result              TEXT NOT NULL
-                        CHECK (result IN ('running', 'succeeded', 'failed', 'interrupted')),
+    result              TEXT NOT NULL REFERENCES sync_results(value),
     downloaded          INTEGER NOT NULL,           -- files downloaded
     new_games           INTEGER NOT NULL,           -- games or DLC GOG newly lists
     new_files           INTEGER NOT NULL,           -- files GOG newly lists
     removed_files       INTEGER NOT NULL,           -- files GOG stopped listing
     changed_changelogs  INTEGER NOT NULL
+);
+
+-- Old copies on the share: every file there that isn't a live file. That's expired files,
+-- files the database has never had, such as builds from before the first run, and the
+-- engine's .old files. Each sync clears this and fills it again from a walk of the library.
+CREATE TABLE old_files (
+    id               INTEGER PRIMARY KEY,
+    product_id       INTEGER NOT NULL REFERENCES games(product_id), -- game whose folder it's in, -1 = none
+    path             TEXT NOT NULL UNIQUE,          -- relative to the library, e.g. wing_commander/setup_old.exe
+    size             INTEGER NOT NULL,              -- bytes
+    found_at         INTEGER NOT NULL               -- Unix time of the walk that found it
 );

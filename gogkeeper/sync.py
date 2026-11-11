@@ -33,7 +33,7 @@ def refresh(db, cat, now):
     counts = {"new_games": 0, "new_files": 0, "expired": 0, "changelogs": 0}
     known_games = {r[0] for r in db.execute("SELECT product_id FROM games")}
     live = {  # (product_id, path) of every file that isn't expired
-        (r[0], r[1]) for r in db.execute("SELECT product_id, path FROM files WHERE status != 'expired'")
+        (r[0], r[1]) for r in db.execute("SELECT product_id, path FROM files WHERE status NOT IN ('expired', 'purged')")
     }
     listed = set()
 
@@ -54,7 +54,7 @@ def refresh(db, cat, now):
 
         for pid, path in live - listed:
             db.execute(
-                "UPDATE files SET status = 'expired' WHERE product_id = ? AND path = ? AND status != 'expired'",
+                "UPDATE files SET status = 'expired' WHERE product_id = ? AND path = ? AND status NOT IN ('expired', 'purged')",
                 (pid, path),
             )
             counts["expired"] += 1
@@ -161,6 +161,49 @@ def record_found_files(db, now):
     return found
 
 
+def record_old_files(db, library, now):
+    """Walk the library and refill old_files with every file on it that isn't a live file. Returns the count.
+
+    Live means not_downloaded or downloaded, so expired files on the share are listed, as are
+    files the database has never had. Each is given the game whose folder holds it, the deepest
+    match, so a DLC's folder wins over its base game's. Run only after a clean download, so
+    nothing is half-written.
+    """
+    games = {}  # folder relative to the library -> product_id
+    live = set()  # paths relative to the library
+    rows = db.execute("""SELECT g.product_id, g.folder, b.folder, f.path, f.status
+                         FROM games g
+                         LEFT JOIN games b ON b.product_id = g.base_product_id AND g.base_product_id != -1
+                         LEFT JOIN files f ON f.product_id = g.product_id
+                         WHERE g.product_id != -1""")
+    for pid, folder, base_folder, path, status in rows:
+        game_dir = catalogue.share_dir(folder, base_folder)
+        games[game_dir] = pid
+        if status in ("not_downloaded", "downloaded"):
+            live.add(f"{game_dir}/{path}")
+
+    old = []
+    for dirpath, _dirs, filenames in os.walk(library):
+        for name in filenames:
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, library).replace(os.sep, "/")
+            if rel in live or not os.path.isfile(full) or os.path.islink(full):
+                continue
+            parts = rel.split("/")[:-1]
+            pid = next((games[d] for d in ("/".join(parts[:i]) for i in range(len(parts), 0, -1)) if d in games), -1)
+            old.append((pid, rel, os.path.getsize(full), now))
+
+    db.execute("BEGIN")
+    try:
+        db.execute("DELETE FROM old_files")
+        db.executemany("INSERT INTO old_files (product_id, path, size, found_at) VALUES (?, ?, ?, ?)", old)
+        db.execute("COMMIT")
+    except BaseException:
+        db.execute("ROLLBACK")
+        raise
+    return len(old)
+
+
 def gog_md5_from_xml(path):
     """GOG's checksum from a saved XML file, or None if the file isn't GOG's or isn't usable.
 
@@ -182,7 +225,7 @@ def fill_checksums(db, xml_root):
     """Copy GOG's checksum into every live file still marked 'unknown' that now has one. Returns the count."""
     filled = 0
     rows = db.execute("""SELECT f.id, f.path, g.gamename FROM files f JOIN games g USING (product_id)
-                         WHERE f.gog_md5 = 'unknown' AND f.status != 'expired'""").fetchall()
+                         WHERE f.gog_md5 = 'unknown' AND f.status NOT IN ('expired', 'purged')""").fetchall()
     for fid, path, gamename in rows:
         xml_file = xml_root / gamename / (path.rsplit("/", 1)[-1] + ".xml")
         if xml_file.is_file() and (md5 := gog_md5_from_xml(xml_file)):
@@ -237,6 +280,8 @@ def run_sync(db, game, platform, language, changes):
         download(db, download_args(platform, language, game))
         found = record_found_files(db, int(time.time()))
         print(f"gogkeeper: found {found} finished files that weren't recorded", file=sys.stderr, flush=True)
+        old = record_old_files(db, first_run.LIBRARY, int(time.time()))
+        print(f"gogkeeper: found {old} old copies on the share", file=sys.stderr, flush=True)
     finally:
         # Also after a failed download: the files that did finish have their XML saved.
         filled = fill_checksums(db, catalogue.xml_dir())

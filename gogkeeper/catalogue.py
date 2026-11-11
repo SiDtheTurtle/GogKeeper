@@ -55,7 +55,7 @@ LIVE_FILES_SQL = """
     FROM files f
     JOIN games g ON g.product_id = f.product_id
     LEFT JOIN games b ON b.product_id = g.base_product_id AND g.base_product_id != -1
-    WHERE f.status != 'expired'"""
+    WHERE f.status NOT IN ('expired', 'purged')"""
 
 
 def safe_name(name, what):

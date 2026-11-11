@@ -84,6 +84,11 @@ class Jobs:
         finally:
             self.running = None
 
+    def status(self):
+        """The job running, if any, and the jobs waiting for it. For the web page."""
+        # A copy first: the scheduler's thread may change it meanwhile.
+        return {"running": self.running, "waiting": sorted(self.waiting_since.copy())}
+
 
 def build(triggers):
     jobs = Jobs()
@@ -99,7 +104,7 @@ def build(triggers):
     scheduler.add_listener(jobs.skipped, EVENT_JOB_MAX_INSTANCES)
     for name, trigger in triggers.items():
         scheduler.add_job(jobs.run, trigger, args=[name], id=name)
-    return scheduler
+    return scheduler, jobs
 
 
 def read_schedule(variable):
@@ -124,13 +129,23 @@ def stop(_signal, _frame):
     os._exit(0)
 
 
-def start_web_page():
+def start_web_page(scheduler, jobs):
     """Serve the web page from this container, in the background.
 
     If it can't start, such as when the port is taken, it says so and the schedule carries on.
+    The page's Sync button brings the scheduled sync forward to now, so it joins the same queue:
+    it waits for a running job, and isn't queued twice.
     """
     import uvicorn
 
+    from gogkeeper import web
+
+    def sync_now():
+        log("sync requested from the web page")
+        scheduler.modify_job("sync", next_run_time=datetime.now().astimezone())
+
+    web.sync_now = sync_now
+    web.job_status = jobs.status
     server = uvicorn.Server(uvicorn.Config("gogkeeper.web:app", host="0.0.0.0", port=WEB_PORT,
                                            log_level="warning"))
     threading.Thread(target=server.run, name="web", daemon=True).start()
@@ -149,8 +164,9 @@ def main():
     logging.getLogger("apscheduler").setLevel(logging.ERROR)  # its routine messages are replaced by ours
     log("scheduler started: sync at '{}', maintenance at '{}'".format(
         setting("GOGKEEPER_SYNC_SCHEDULE"), setting("GOGKEEPER_MAINTENANCE_SCHEDULE")))
-    start_web_page()
-    build(triggers).start()
+    scheduler, jobs = build(triggers)
+    start_web_page(scheduler, jobs)
+    scheduler.start()
 
 
 if __name__ == "__main__":

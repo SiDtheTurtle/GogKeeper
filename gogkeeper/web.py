@@ -91,6 +91,7 @@ STYLE = """
         padding: 6px 14px; font: inherit; cursor: pointer;
     }
     button:hover { filter: brightness(1.15); }
+    button:disabled { opacity: 0.6; cursor: default; filter: none; }
     input {
         background: var(--surface); color: var(--text); border: 1px solid #666;
         border-radius: 4px; padding: 6px 8px; font: inherit;
@@ -103,6 +104,9 @@ STYLE = """
         padding: 10px 24px; border-bottom: 3px solid var(--purple);
     }
     .top form { margin: 0; }
+    .actions { display: flex; gap: 10px; }
+    #sync { min-width: 10.5em; }  /* doesn't change size when it asks "Sure?" */
+    #sync[data-armed] { background: var(--red); color: #212121; font-weight: 600; }
     .brand { color: var(--text); font-size: 22px; font-weight: 600; text-decoration: none;
              display: inline-flex; align-items: center; gap: 10px; }
     .brand img { width: 40px; height: 40px; }
@@ -208,13 +212,60 @@ function sortable() {
     if (buttons.length) sortBy(buttons[0], 1);
 }
 
+// Like a safety cover: the first click arms it, and it closes again after 5 seconds.
+// The second click starts a sync. While it runs or waits, the page checks every 15 seconds,
+// and reloads when it's finished.
+function syncButton() {
+    const button = document.getElementById("sync");
+    if (!button) return;
+    let timer;
+    function disarm() {
+        clearTimeout(timer);
+        delete button.dataset.armed;
+        button.textContent = "Sync now";
+    }
+    function busy(text) {
+        button.disabled = true;
+        button.textContent = text;
+    }
+    function show(jobs) {
+        if (jobs.running === "sync") busy("Sync running\\u2026");
+        else if (jobs.waiting.includes("sync")) busy("Sync waiting\\u2026");
+        else if (button.disabled) location.reload();
+    }
+    async function check() {
+        try { show(await (await fetch("/jobs")).json()); } catch { /* try again next time */ }
+        if (button.disabled) setTimeout(check, 15000);
+    }
+    async function start() {
+        busy("Starting\\u2026");
+        try {
+            const response = await fetch("/sync", { method: "POST" });
+            if (response.ok) show(await response.json());
+        } catch { /* the next check shows what happened */ }
+        if (button.disabled) setTimeout(check, 15000);
+    }
+    button.addEventListener("click", () => {
+        if (!button.dataset.armed) {
+            button.dataset.armed = "yes";
+            button.textContent = "Sure? Click again";
+            timer = setTimeout(disarm, 5000);
+            return;
+        }
+        disarm();
+        start();
+    });
+    if (button.disabled) setTimeout(check, 15000);
+}
+
 document.querySelectorAll(".notes").forEach(trim);
 sortable();
+syncButton();
 """
 
 # The browser's safety net: only this site's own stylesheet and script may run.
 CSP = (
-    "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
+    "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src 'self'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 
@@ -245,6 +296,11 @@ LOGIN_CODE = re.compile(r"[A-Za-z0-9._~-]{1,2048}")
 login_lock = threading.Lock()
 login_process = None
 login_address = None
+
+# Set by the scheduler when it serves this page. Run on its own, the page has no Sync button.
+sync_now = None  # brings the scheduled sync forward to now
+job_status = None  # {"running": job name or None, "waiting": [job names]}
+SYNC_START_SECONDS = 5  # for the scheduler to pick up the sync
 
 app = FastAPI()
 
@@ -486,8 +542,46 @@ def library():
         "<span><button class=sort type=button>Status</button></span>"
         "<span><button class=sort type=button>Last downloaded</button></span>"
         f"<span>Latest change</span></div>{rows}",
-        actions="<form method=post action=/login><button>Log in to GOG</button></form>",
+        actions=f"<div class=actions>{sync_button()}"
+                "<form method=post action=/login><button>Log in to GOG</button></form></div>",
     )
+
+
+def sync_label(jobs):
+    """What the Sync button says while a sync is running or waiting, else None."""
+    if jobs["running"] == "sync":
+        return "Sync running…"
+    if "sync" in jobs["waiting"]:
+        return "Sync waiting…"
+    return None
+
+
+def sync_button():
+    if not sync_now:
+        return ""
+    label = sync_label(job_status())
+    if label:
+        return f"<button id=sync type=button disabled>{label}</button>"
+    return "<button id=sync type=button>Sync now</button>"
+
+
+@app.get("/jobs")
+def jobs():
+    return job_status() if job_status else {"running": None, "waiting": []}
+
+
+@app.post("/sync")
+def sync(request: Request):
+    """Start a sync, then wait briefly until the scheduler has it, so the page can show it."""
+    if not from_this_site(request):
+        return Response("Refused: that came from another website.", status_code=403)
+    if not sync_now:
+        return Response("Sync isn't available: the scheduler isn't running.", status_code=404)
+    sync_now()
+    deadline = time.monotonic() + SYNC_START_SECONDS
+    while not sync_label(job_status()) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    return job_status()
 
 
 def login_page(message=""):

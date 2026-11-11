@@ -39,8 +39,8 @@ def log(message):
 
 def check_share():
     """Exit if the share isn't mounted. Not sys.exit: that would only end a job's thread."""
-    if not first_run.LIBRARY.is_dir():
-        log(f"library folder not found: {first_run.LIBRARY}. Is the share mounted? Stopping")
+    if not first_run.LIBRARY.is_mount():
+        log(f"share not mounted at {first_run.LIBRARY}. Stopping")
         os._exit(1)
 
 

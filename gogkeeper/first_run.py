@@ -50,8 +50,8 @@ def main():
         if has_data(db):
             print("gogkeeper: first run already done, nothing to do", file=sys.stderr)
             return
-        if not LIBRARY.is_dir():
-            raise RuntimeError(f"library folder not found: {LIBRARY}. Is the share mounted?")
+        if not LIBRARY.is_mount():
+            raise RuntimeError(f"share not mounted at {LIBRARY}")
         catalogue.update_cache()
         c = import_catalogue(db, catalogue.load(), LIBRARY, int(time.time()))
         print(

@@ -261,8 +261,8 @@ def finish_run(db, run_id, started, result, changes):
 def run_sync(db, game, platform, language, changes):
     """The sync's steps. Fills in changes as soon as they're known, so a later failure keeps them."""
     backup.before_sync(db)
-    if not first_run.LIBRARY.is_dir():
-        raise RuntimeError(f"library folder not found: {first_run.LIBRARY}. Is the share mounted?")
+    if not first_run.LIBRARY.is_mount():
+        raise RuntimeError(f"share not mounted at {first_run.LIBRARY}")
     catalogue.update_cache()
     cat, now = catalogue.load(), int(time.time())
     if first_run.has_data(db):

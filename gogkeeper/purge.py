@@ -69,8 +69,8 @@ def purge(db, library):
 
 
 def main():
-    if not first_run.LIBRARY.is_dir():
-        raise RuntimeError(f"library folder not found: {first_run.LIBRARY}. Is the share mounted?")
+    if not first_run.LIBRARY.is_mount():
+        raise RuntimeError(f"share not mounted at {first_run.LIBRARY}")
     db = open_db(first_run.DB_PATH)
     try:
         copy = backup.make_backup(db)  # raises if it fails, so nothing is deleted without one

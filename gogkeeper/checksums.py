@@ -62,8 +62,8 @@ def main():
 
     db = open_db(first_run.DB_PATH)
     try:
-        if not first_run.LIBRARY.is_dir():
-            raise RuntimeError(f"library folder not found: {first_run.LIBRARY}. Is the share mounted?")
+        if not first_run.LIBRARY.is_mount():
+            raise RuntimeError(f"share not mounted at {first_run.LIBRARY}")
         if run == "maintenance run":
             store_links.update(db, every_game=True)
         rows = db.execute(MAINTENANCE_SQL if run == "maintenance run" else NEW_FILES_SQL).fetchall()

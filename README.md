@@ -1,8 +1,8 @@
 # GogKeeper
 
 Keeps a backup of your GOG offline installers current on a NAS. It downloads new and updated installers,
-DLC and extras, checks each download against GOG's checksum, and never deletes anything: old versions stay
-on the share for you to review.
+DLC and extras, and checks each download against GOG's checksum. It never deletes anything by itself: old
+versions stay on the share until you purge them from the web page.
 
 **Unofficial.** GogKeeper isn't affiliated with or endorsed by GOG. Use it only for games you own.
 
@@ -18,7 +18,7 @@ Alerts are planned.
 
 - Docker with Compose
 - A GOG account
-- An SMB share for the backup, with a `library` folder in it
+- An SMB share for the backup. GogKeeper puts one folder per game at the top of it
 
 ## Setup
 
@@ -64,8 +64,9 @@ So does a share that isn't mounted, whether at startup or when a run comes due: 
 restarting, and the web page is down, until the share is back.
 
 Starting the container never triggers a run, and a run missed while the container was down waits for its next
-time. A run that fails is logged, and the next scheduled run tries again. There are no alerts yet, so check
-the log now and then with `docker compose logs gogkeeper`.
+time. A run that fails is logged, and the next scheduled run tries again. There are no alerts yet: the web
+page shows "Last sync failed" if the last sync failed or was interrupted, and the log has the details, with
+`docker compose logs gogkeeper`. An expired GOG login shows up this way.
 
 ### Running a job yourself
 
@@ -99,7 +100,7 @@ part-way, the next `sync` finishes what's left.
 
 ### One job at a time
 
-`sync` and `maintenance` never run together, whether scheduled or started by hand. A job that finds another
+`sync`, `maintenance` and the page's Purge never run together, whether scheduled or started by hand. A job that finds another
 running waits for it to finish, and logs what it waited for and how long. Press Ctrl-C to give up on a manual
 job while it's waiting. If a scheduled job comes due while the same job is already running or waiting, that
 run is skipped and logged.
@@ -128,14 +129,24 @@ with, as for extras.
 
 ### The web page
 
-A read-only page lists your games, with each one's status, last download and latest change from GOG. Open a
-game to see its files, grouped by type, and its release notes. The page also has a button for logging in to
-GOG, so you don't need `--browser-login`: you log in on GOG's own site, then paste back the address you land on.
+The page lists your games, with each one's status, last download, latest change from GOG and a link to its
+store page. Open a game to see its files, grouped by type, its DLC, its previous versions and its release
+notes. A game's status includes its DLC, so a broken DLC marks the game as broken.
+
+It also has these buttons, each asking "Are you sure?" first:
+
+- **Sync now** brings the next scheduled sync forward. It joins the same queue as scheduled jobs.
+- **Purge** deletes the previous versions: files on the share that GOG no longer offers, including
+  lgogdownloader's `.old` files. They're listed after each sync that finishes cleanly. Purge backs up the
+  database first, checks each file again before deleting it, and never deletes folders.
+- **Log in to GOG**, so you don't need `--browser-login`: you log in on GOG's own site, then paste back the
+  address you land on.
 
 The scheduled container serves the page on port 7157, so open `http://<your server>:7157`. To use another
 port, change the first number in `ports:` in `compose.yml`, such as `"8080:7157"`.
 
-**The page has no password.** Anyone who can reach it can see your library and replace your GOG login, so
+**The page has no password.** Anyone who can reach it can see your library, purge old files and replace your
+GOG login, so
 keep it on your LAN and never expose it to the internet. To reach it only from the server itself, change the
 port line to `"127.0.0.1:7157:7157"`.
 
@@ -218,8 +229,7 @@ a backup from before the upgrade.
 ```
 
 Files are matched by exact path, so don't rename them by hand. When GOG replaces a file with one under a new
-name, the old one stays where it is and is marked expired in the database. The page lists these as previous
-versions, and its Purge button deletes them.
+name, the old one stays where it is and is marked expired in the database, until you purge it from the page.
 
 ## Credits and license
 

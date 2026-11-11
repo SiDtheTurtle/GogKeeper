@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 3
 
 # The statements that take a database from each version to the next. schema.sql is always
 # the latest whole schema, used only for a new database.
@@ -27,16 +27,15 @@ UPGRADES = {
             changed_changelogs  INTEGER NOT NULL
         )""",
     ],
-    # SQLite can only add a NOT NULL column with a default. Code always sets the value anyway.
     2: [
+        # Store links. SQLite can only add a NOT NULL column with a default. Code always sets the value anyway.
         "ALTER TABLE games ADD COLUMN store_url TEXT NOT NULL DEFAULT 'unknown'",
         "UPDATE games SET store_url = 'none' WHERE product_id = -1",
-    ],
-    # Allowed values move from CHECK lists into lookup tables, and 'purged' is added. SQLite
-    # can't change a CHECK in place, so files and sync_runs are rebuilt as SQLite documents:
-    # new table, copy every row, drop the old one, rename. No other table points at either.
-    # Every copied row is checked against the new foreign keys, so a bad value stops the upgrade.
-    3: [
+
+        # Allowed values move from CHECK lists into lookup tables, and 'purged' is added. SQLite
+        # can't change a CHECK in place, so files and sync_runs are rebuilt as SQLite documents:
+        # new table, copy every row, drop the old one, rename. No other table points at either.
+        # Every copied row is checked against the new foreign keys, so a bad value stops the upgrade.
         "CREATE TABLE file_statuses (value TEXT PRIMARY KEY) WITHOUT ROWID",
         "INSERT INTO file_statuses (value) VALUES ('not_downloaded'), ('downloaded'), ('expired'), ('purged')",
         "CREATE TABLE file_types (value TEXT PRIMARY KEY) WITHOUT ROWID",

@@ -502,8 +502,8 @@ def show_size(size):
 
 def stats_line(games, last_sync, latest_result, old):
     """Games, not counting DLC, then the last successful sync, then the old copies on the share,
-    if any, with the button that filters to them. Then any problems: games or DLC with missing
-    or failed files, and the newest finished sync if it failed or was interrupted."""
+    if any, with the button that filters to them. Then any problems: games with missing or failed
+    files, their DLC's included, and the newest finished sync if it failed or was interrupted."""
     count = sum(1 for game in games if game[7] == -1)
     parts = [f"{count} game{'' if count == 1 else 's'}"]
     if last_sync:
@@ -564,6 +564,27 @@ def old_mark(old_files):
     return f"<span class=old>{len(old_files)} previous</span>" if old_files else ""
 
 
+def with_dlc(game, dlc):
+    """The game's row with its DLC's files counted in: latest download, wanted, missing, failed.
+    So a broken DLC makes its game broken."""
+    family = [game, *dlc]
+    product_id, title, _last, changelog, *_counts, base, store_url = game
+    return (product_id, title, max(g[2] or 0 for g in family), changelog,
+            *(sum(g[i] or 0 for g in family) for i in (4, 5, 6)), base, store_url)
+
+
+def dlc_group(dlc, files, old):
+    """The game's DLC, each one opening to its own files and previous versions, or nothing."""
+    if not dlc:
+        return ""
+    items = "".join(
+        f"<details><summary>{html.escape(title)} – {coloured(game_status(wanted, missing, failed))}"
+        f"{old_mark(old[product_id])}</summary>{type_groups(files[product_id])}{old_group(old[product_id])}</details>"
+        for product_id, title, _last, _changelog, wanted, missing, failed, _base, _store_url in dlc
+    )
+    return f"<details><summary>DLC ({len(dlc)})</summary>{items}</details>"
+
+
 def clean_notes(changelog):
     """GOG's changelog HTML with basic formatting only: no scripts, links, images or attributes."""
     return nh3.clean(changelog, tags=NOTES_TAGS, attributes={}, link_rel=None)
@@ -610,12 +631,20 @@ def library():
             old[product_id].append((path.removeprefix(prefix), size))
     finally:
         db.close()
+    dlc = defaultdict(list)  # base product_id -> its DLC's rows
+    for game in games:
+        if game[7] != -1:
+            dlc[game[7]].append(game)
+    games = [with_dlc(game, dlc[game[0]]) for game in games if game[7] == -1]
+    # A game's "N previous" counts its DLC's too, so showing only those finds them.
+    family_old = {product_id: old[product_id] + [f for d in dlc[product_id] for f in old[d[0]]]
+                  for product_id, *_ in games}
     rows = "".join(
-        f"<details{' data-old' if old[product_id] else ''}><summary class=row>"
-        f"<span>{html.escape(title)}{old_mark(old[product_id])}</span><span>{coloured(game_status(wanted, missing, failed))}</span>"
+        f"<details{' data-old' if family_old[product_id] else ''}><summary class=row>"
+        f"<span>{html.escape(title)}{old_mark(family_old[product_id])}</span><span>{coloured(game_status(wanted, missing, failed))}</span>"
         f"<span data-sort='{last or ''}'>{show_date(last)}</span><span>{html.escape(latest_change(changelog))}</span>"
         f"<span>{store_link(title, store_url)}</span></summary>{type_groups(files[product_id])}"
-        f"{old_group(old[product_id])}{release_notes(changelog)}</details>"
+        f"{old_group(old[product_id])}{dlc_group(dlc[product_id], files, old)}{release_notes(changelog)}</details>"
         for product_id, title, last, changelog, wanted, missing, failed, _base, store_url in games
     )
     if old[-1]:  # in folders that belong to no game

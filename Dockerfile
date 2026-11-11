@@ -1,8 +1,8 @@
 # lgogdownloader, pinned to an exact upstream commit.
 
 FROM debian:trixie-slim AS build
-ARG LGOG_TAG=v3.19
-ARG LGOG_COMMIT=bb80e164dccfb72485932725b618ffa66854e7c4
+ARG LGOG_TAG=v3.20
+ARG LGOG_COMMIT=00baf5b5c79799ff11f454b81fc46b126c343f22
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates cmake git ninja-build pkg-config \

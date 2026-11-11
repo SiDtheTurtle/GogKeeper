@@ -23,9 +23,7 @@ services:
       - cache:/cache
       # GogKeeper's database. Kept on local disk, as SQLite is unreliable over SMB.
       - data:/data
-      # nocopy: stops Docker copying the image's folder permissions onto the new
-      # volume, which would alter the share (and fails outright on a read-only mount).
-      - library:/library:nocopy
+      - library:/library
 
 volumes:
   config:

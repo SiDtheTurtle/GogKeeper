@@ -6,6 +6,8 @@ Needs GOGKEEPER_SYNC_SCHEDULE and GOGKEEPER_MAINTENANCE_SCHEDULE, in cron's five
 format, e.g. "0 0 * * *". Times follow TZ. Starting never triggers a run, and a run missed
 while the scheduler was down waits for its next time. A job that comes due while another is
 running waits for it to finish. A failed job is logged and the scheduler carries on.
+If the share isn't mounted, at the start or when a job comes due, the scheduler exits
+with an error, so the container shows as restarting instead of failing quietly.
 """
 
 import logging
@@ -23,6 +25,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from gogkeeper import first_run
 from gogkeeper.sync import setting
 
 ENTRYPOINT = "/usr/local/bin/docker-entrypoint.sh"
@@ -31,6 +34,13 @@ WEB_PORT = 7157
 
 def log(message):
     print(f"gogkeeper: {datetime.now():%Y-%m-%d %H:%M:%S}: {message}", file=sys.stderr, flush=True)
+
+
+def check_share():
+    """Exit if the share isn't mounted. Not sys.exit: that would only end a job's thread."""
+    if not first_run.LIBRARY.is_dir():
+        log(f"library folder not found: {first_run.LIBRARY}. Is the share mounted? Stopping")
+        os._exit(1)
 
 
 def how_long(seconds):
@@ -54,6 +64,7 @@ class Jobs:
         log(f"{event.job_id} is due, but one is already running or waiting, so this run is skipped")
 
     def run(self, name):
+        check_share()
         self.running = name
         due = self.waiting_since.pop(name, None)
         if due:
@@ -134,6 +145,7 @@ def main():
     # Without these, as the container's main process it would ignore docker stop.
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    check_share()
     logging.getLogger("apscheduler").setLevel(logging.ERROR)  # its routine messages are replaced by ours
     log("scheduler started: sync at '{}', maintenance at '{}'".format(
         setting("GOGKEEPER_SYNC_SCHEDULE"), setting("GOGKEEPER_MAINTENANCE_SCHEDULE")))

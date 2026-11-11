@@ -60,6 +60,8 @@ wrong days. Both are refused at startup:
 - Set a day of the month or a weekday, not both.
 
 An invalid schedule stops the scheduler with an error, and Docker keeps restarting it until you fix `.env`.
+So does a share that isn't mounted, whether at startup or when a run comes due: the container shows as
+restarting, and the web page is down, until the share is back.
 
 Starting the container never triggers a run, and a run missed while the container was down waits for its next
 time. A run that fails is logged, and the next scheduled run tries again. There are no alerts yet, so check

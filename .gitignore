@@ -7,6 +7,8 @@ phase0/
 
 # Internal notes: hostnames, addresses and share layout
 HANDOFF.md
+# Local debug stack script: has server addresses
+dev.sh
 
 # Local tool settings
 .claude/

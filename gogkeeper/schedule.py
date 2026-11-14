@@ -134,17 +134,17 @@ def start_web_page(scheduler, jobs):
     """Serve the web page from this container, in the background.
 
     If it can't start, such as when the port is taken, it says so and the schedule carries on.
-    The page's Sync button brings the scheduled sync forward to now, so it joins the same queue:
-    it waits for a running job, and isn't queued twice. Its Purge button adds a one-off purge
-    to the same queue.
+    The page's Sync and Maintenance buttons bring that scheduled job forward to now, so it joins
+    the same queue: it waits for a running job, and isn't queued twice. Its Purge button adds a
+    one-off purge to the same queue.
     """
     import uvicorn
 
     from gogkeeper import web
 
-    def sync_now():
-        log("sync requested from the web page")
-        scheduler.modify_job("sync", next_run_time=datetime.now().astimezone())
+    def run_now(name):
+        log(f"{name} requested from the web page")
+        scheduler.modify_job(name, next_run_time=datetime.now().astimezone())
 
     def purge_now():
         """Queue one purge, which runs once and has no schedule. True if queued, False if one already is."""
@@ -155,7 +155,7 @@ def start_web_page(scheduler, jobs):
         log("purge requested from the web page")
         return True
 
-    web.sync_now = sync_now
+    web.run_now = run_now
     web.purge_now = purge_now
     web.job_status = jobs.status
     server = uvicorn.Server(uvicorn.Config("gogkeeper.web:app", host="0.0.0.0", port=WEB_PORT,

@@ -136,6 +136,8 @@ notes. A game's status includes its DLC, so a broken DLC marks the game as broke
 It also has these buttons, each asking "Are you sure?" first:
 
 - **Sync now** brings the next scheduled sync forward. It joins the same queue as scheduled jobs.
+- **Maintenance** brings the next scheduled maintenance forward, in the same way. It re-checks every file and
+  every store link, so it can take hours; its first click says so in place of "Are you sure?".
 - **Purge** deletes the previous versions: files on the share that GOG no longer offers, including
   lgogdownloader's `.old` files. They're listed after each sync that finishes cleanly. Purge backs up the
   database first, checks each file again before deleting it, and never deletes folders.

@@ -226,8 +226,9 @@ function sortable() {
     if (buttons.length) sortBy(buttons[0], 1);
 }
 
-// The Sync and Purge buttons. Like a safety cover: the first click arms it, and it closes
-// again after 5 seconds. The second click starts the job. While it runs or waits, the page
+// The Sync, Maintenance and Purge buttons. Like a safety cover: the first click arms it (showing
+// "Are you sure?" or the button's own warning), and it closes again after 5 seconds. The second
+// click starts the job. While it runs or waits, the page
 // checks every 5 seconds, and reloads when it's finished. A refusal is shown on the button.
 function jobButton(job, name) {
     const button = document.getElementById(job);
@@ -265,7 +266,7 @@ function jobButton(job, name) {
     button.addEventListener("click", () => {
         if (!button.dataset.armed) {
             button.dataset.armed = "yes";
-            button.textContent = "Are you sure?";
+            button.textContent = button.dataset.confirm || "Are you sure?";
             timer = setTimeout(disarm, 5000);
             return;
         }
@@ -290,6 +291,7 @@ document.querySelectorAll(".notes").forEach(trim);
 oldFilter();
 sortable();
 jobButton("sync", "Sync");
+jobButton("maintenance", "Maintenance");
 jobButton("purge", "Purge");
 """
 
@@ -327,11 +329,11 @@ login_lock = threading.Lock()
 login_process = None
 login_address = None
 
-# Set by the scheduler when it serves this page. Run on its own, the page has no Sync button.
-sync_now = None  # brings the scheduled sync forward to now
+# Set by the scheduler when it serves this page. Run on its own, the page has no job buttons.
+run_now = None  # brings a scheduled job ("sync" or "maintenance") forward to now
 purge_now = None  # queues a one-off purge
 job_status = None  # {"running": job name or None, "waiting": [job names]}
-SYNC_START_SECONDS = 5  # for the scheduler to pick up the sync
+SYNC_START_SECONDS = 5  # for the scheduler to pick up the job
 
 app = FastAPI()
 
@@ -657,7 +659,9 @@ def library():
         "<span><button class=sort type=button>Status</button></span>"
         "<span><button class=sort type=button>Last downloaded</button></span>"
         f"<span>Latest change</span><span></span></div>{rows}",
-        actions=f"<div class=actions>{purge_button(sum(len(f) for f in old.values()))}{sync_button()}"
+        actions=f"<div class=actions>{purge_button(sum(len(f) for f in old.values()))}"
+                f"{scheduled_button('maintenance', 'Maintenance', MAINTENANCE_WARNING)}"
+                f"{scheduled_button('sync', 'Sync now')}"
                 "<form method=post action=/login><button>Log in to GOG</button></form></div>",
     )
 
@@ -671,13 +675,18 @@ def job_label(jobs, job):
     return None
 
 
-def sync_button():
-    if not sync_now:
+MAINTENANCE_WARNING = "Re-checks every file. This can take hours."
+
+
+def scheduled_button(job, text, confirm=""):
+    """A button that runs a scheduled job now. confirm replaces "Are you sure?" on the first click."""
+    if not run_now:
         return ""
-    label = job_label(job_status(), "sync")
+    label = job_label(job_status(), job)
     if label:
-        return f"<button id=sync class=job type=button disabled data-busy>{label}</button>"
-    return "<button id=sync class=job type=button>Sync now</button>"
+        return f"<button id={job} class=job type=button disabled data-busy>{label}</button>"
+    ask = f" data-confirm='{html.escape(confirm, quote=True)}'" if confirm else ""
+    return f"<button id={job} class=job type=button{ask}>{text}</button>"
 
 
 def purge_button(count):
@@ -699,13 +708,22 @@ def jobs():
 
 @app.post("/sync")
 def sync(request: Request):
-    """Start a sync, then wait briefly until the scheduler has it, so the page can show it."""
+    return start_scheduled(request, "sync")
+
+
+@app.post("/maintenance")
+def maintenance(request: Request):
+    return start_scheduled(request, "maintenance")
+
+
+def start_scheduled(request, job):
+    """Start a scheduled job now, then wait briefly until the scheduler has it, so the page can show it."""
     if not from_this_site(request):
         return Response("Refused: that came from another website.", status_code=403)
-    if not sync_now:
-        return Response("Sync isn't available: the scheduler isn't running.", status_code=404)
-    sync_now()
-    return wait_for_job("sync")
+    if not run_now:
+        return Response(f"{job.title()} isn't available: the scheduler isn't running.", status_code=404)
+    run_now(job)
+    return wait_for_job(job)
 
 
 def wait_for_job(job):

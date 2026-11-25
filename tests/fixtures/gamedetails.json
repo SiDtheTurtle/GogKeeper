@@ -1,0 +1,40 @@
+{
+  "games": [
+    {
+      "gamename": "star_pilot",
+      "product_id": "1001",
+      "title": "Star Pilot",
+      "changelog": "<h4>1.0</h4><ul><li>First release</li></ul>",
+      "installers": [
+        {"path": "/star_pilot/setup_star_pilot_1.0.exe", "platform": 1, "language": 1, "version": "1.0"}
+      ],
+      "extras": [
+        {"path": "/star_pilot/manual.pdf", "platform": 1, "language": 1}
+      ],
+      "languagepacks": [
+        {"path": "/star_pilot/setup_star_pilot_fr_1.0.exe", "platform": 1, "language": 2, "version": "1.0"}
+      ],
+      "dlcs": [
+        {
+          "gamename": "star_pilot_moons",
+          "product_id": "1002",
+          "title": "Star Pilot: Moons",
+          "installers": [
+            {"path": "/star_pilot_moons/setup_star_pilot_moons_1.0.exe", "platform": 1, "language": 1, "version": "1.0"}
+          ],
+          "extras": [
+            {"path": "/star_pilot_moons/moons_map.pdf", "platform": 1, "language": 1}
+          ]
+        }
+      ]
+    },
+    {
+      "gamename": "quiet_harbour",
+      "product_id": "2001",
+      "title": "Quiet Harbour",
+      "installers": [
+        {"path": "/quiet_harbour/setup_quiet_harbour.exe", "platform": 1, "language": 1}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# Weekly pull requests for outdated dependencies, grouped to keep the number down.
+# lgogdownloader isn't covered: Dependabot can't read its pin in the Dockerfile,
+# so .github/workflows/lgogdownloader-update.yml checks it instead.
+version: 2
+updates:
+  - package-ecosystem: pip          # requirements.txt and requirements-dev.txt
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python:
+        patterns: ["*"]
+    ignore:
+      # The code uses APScheduler 3.x's API; 4.x is a rewrite.
+      - dependency-name: apscheduler
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker       # the python:3.12-slim-trixie base image, both stages
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      # Moving to a new Python version is a deliberate change, not a weekly bump.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]

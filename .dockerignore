@@ -1,4 +1,5 @@
 *
 !docker-entrypoint.sh
+!requirements.txt
 !gogkeeper/
 gogkeeper/**/__pycache__

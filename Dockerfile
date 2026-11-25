@@ -1,6 +1,9 @@
 # lgogdownloader, pinned to an exact upstream commit.
 
-FROM debian:trixie-slim AS build
+# Both stages use the same base image, pinned to an exact build, so lgogdownloader runs with the
+# libraries it was built against. When a patched build is published, Dependabot opens a pull request
+# to move the pin. The -trixie tag matters: the library package names below are Debian trixie's.
+FROM python:3.12-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b AS build
 ARG LGOG_TAG=v3.20
 ARG LGOG_COMMIT=00baf5b5c79799ff11f454b81fc46b126c343f22
 
@@ -17,14 +20,17 @@ RUN git clone --branch "$LGOG_TAG" --depth 1 https://github.com/Sude-/lgogdownlo
  && ninja -C /src/build lgogdownloader
 
 
-FROM debian:trixie-slim
+FROM python:3.12-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates libboost-date-time1.83.0 libboost-filesystem1.83.0 \
       libboost-iostreams1.83.0 libboost-program-options1.83.0 libboost-regex1.83.0 \
       libcurl4t64 libjsoncpp26 librhash1 libtidy58 libtinyxml2-11 tzdata zlib1g \
-      python3 python3-apscheduler python3-fastapi python3-uvicorn python3-nh3 \
  && rm -rf /var/lib/apt/lists/*
+
+# GogKeeper's Python packages, at the exact versions in requirements.txt.
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
 COPY --from=build /src/build/lgogdownloader /usr/local/bin/lgogdownloader
 
@@ -51,5 +57,8 @@ WORKDIR /home/gog
 # Refuses file commands that are missing the core parameters: see the script.
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 EXPOSE 7157
+# Only the scheduled container serves the page; one-off runs show as unhealthy, which is harmless.
+HEALTHCHECK --interval=1m --timeout=5s --start-period=30s \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7157/healthz')"
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["--help"]

@@ -441,6 +441,12 @@ async def add_security_policy(request, call_next):
     return response
 
 
+@app.get("/healthz")
+def healthz():
+    """For Docker's health check: shows the web page is up. Reads nothing."""
+    return {"status": "ok"}
+
+
 @app.get("/style.css")
 def style():
     return Response(STYLE, media_type="text/css")

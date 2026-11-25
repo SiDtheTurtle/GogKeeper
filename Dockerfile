@@ -51,5 +51,8 @@ WORKDIR /home/gog
 # Refuses file commands that are missing the core parameters: see the script.
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 EXPOSE 7157
+# Only the scheduled container serves the page; one-off runs show as unhealthy, which is harmless.
+HEALTHCHECK --interval=1m --timeout=5s --start-period=30s \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7157/healthz')"
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["--help"]

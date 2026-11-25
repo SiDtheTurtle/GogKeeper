@@ -147,6 +147,10 @@ It also has these buttons, each asking "Are you sure?" first:
 The scheduled container serves the page on port 7157, so open `http://<your server>:7157`. To use another
 port, change the first number in `ports:` in `compose.yml`, such as `"8080:7157"`.
 
+Docker checks the page every minute at `/healthz`, so `docker ps` shows the scheduled container as `healthy`.
+One-off containers from `docker compose run` have no page, so they show as `unhealthy` if they run for more
+than 30 seconds. That's harmless: Docker doesn't stop or restart them.
+
 **The page has no password.** Anyone who can reach it can see your library, purge old files and replace your
 GOG login, so
 keep it on your LAN and never expose it to the internet. To reach it only from the server itself, change the

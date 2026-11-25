@@ -18,7 +18,7 @@ from gogkeeper import backup, catalogue, first_run, store_links
 from gogkeeper.db import add_changelog_if_new, add_file, add_game, open_db
 
 # The engine prints this when a file finishes, e.g.
-#   20261107T120000 [Thread #1] Download complete: setup_game_(123).exe (@ 50.2 MB/s)
+#   2026-Nov-07 12:00:00 [Thread #1] Download complete: setup_game_(123).exe (@ 50.2 MiB/s)
 # A failed transfer prints "Download complete (<error>): ..." instead, which this doesn't match.
 DOWNLOAD_COMPLETE = re.compile(r"Download complete: (.+) \(@ [^)]*\)\s*$")
 

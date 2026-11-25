@@ -1,0 +1,45 @@
+name: Tests
+
+# Every pull request (including Dependabot's and the lgogdownloader update's) and
+# every push to main shows a pass or fail before anything is merged or released.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Run the tests
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -q
+
+  # Builds the image without publishing it. This compiles lgogdownloader and runs its
+  # --version check, so base image and lgogdownloader pin changes are checked too.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false

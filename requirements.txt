@@ -1,0 +1,5 @@
+fastapi==0.165.0
+uvicorn==0.54.0
+# 3.x only: 4.x is a rewrite with a different API.
+apscheduler==3.11.3
+nh3==0.3.8
